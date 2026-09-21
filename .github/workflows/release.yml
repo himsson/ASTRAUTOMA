@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (for example v1.0.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Build ASTRAUTOMA-<tag>.zip
+        id: pkg
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          NAME="ASTRAUTOMA-$TAG"
+          mkdir -p "dist/ASTRAUTOMA"
+          cp -r ASTRAUTOMA.bat astrautoma.py requirements.txt astra kia_core tools data assets \
+                LICENSE NOTICE README.md README.ru.md CHANGELOG.md "dist/ASTRAUTOMA/"
+          mkdir -p dist/ASTRAUTOMA/logs dist/ASTRAUTOMA/weights
+          (cd dist && zip -qr "$NAME.zip" ASTRAUTOMA)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "zip=dist/$NAME.zip" >> "$GITHUB_OUTPUT"
+      - name: Release notes
+        run: |
+          TAG="${{ steps.pkg.outputs.tag }}"
+          cat > notes.md <<NOTES
+          ## ⬇️ Which file do I need?
+
+          | File | What it is |
+          |---|---|
+          | **ASTRAUTOMA-$TAG.zip** | **The program.** Unpack and run \`ASTRAUTOMA.bat\`. |
+          | ASTRAUTOMA-Weights-*.zip | The trained AI. Unpack into \`Desktop\ASTRAUTOMA Weights\`, then install it in the app under *Weights / Knowledge*. |
+
+          You need **both**. *Source code* archives are for developers.
+
+          **Какой файл качать?** \`ASTRAUTOMA-$TAG.zip\` — сама программа (запуск через \`ASTRAUTOMA.bat\`),
+          \`ASTRAUTOMA-Weights-*.zip\` — обученный ИИ. Нужны оба.
+
+          Requires KSP 1.12, the kRPC mod and Python 3.10+. Full list of changes: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
+          NOTES
+          sed -i 's/^          //' notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.pkg.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.pkg.outputs.zip }}" --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" "${{ steps.pkg.outputs.zip }}" --title "ASTRAUTOMA $TAG" --notes-file notes.md
+          fi
