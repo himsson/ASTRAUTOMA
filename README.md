@@ -14,8 +14,12 @@
 ![kRPC](https://img.shields.io/badge/kRPC-0.6-3ddbc4)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-5b8cff)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-5b8cff)
+[![Checks](https://github.com/himsson/ASTRAUTOMA/actions/workflows/check.yml/badge.svg)](https://github.com/himsson/ASTRAUTOMA/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-f5a524)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/himsson/ASTRAUTOMA?style=flat&color=f5a524)](https://github.com/himsson/ASTRAUTOMA/stargazers)
+
+
+**[🌐 Website](https://himsson.github.io/ASTRAUTOMA/)**
 
 </div>
 
@@ -48,7 +52,7 @@ It shows its plan before liftoff and then follows it step by step in a live tabl
 1. Install **KSP 1.12** and the **[kRPC](https://github.com/krpc/krpc/releases)** mod
    (copy `GameData/kRPC` into the game's `GameData` folder).
 2. Install **[Python 3.10+](https://www.python.org/downloads/)** and tick *Add python.exe to PATH*.
-3. Download this repository (**Code → Download ZIP**) and unpack it anywhere.
+3. Download **`ASTRAUTOMA-vX.zip`** from the [latest release](https://github.com/himsson/ASTRAUTOMA/releases/latest) and unpack it anywhere.
 4. Get the **weights** (see below). Without them the app has no mission targets.
 5. Start KSP, load a save and press **Start Server** in the kRPC window.
 6. Run **`ASTRAUTOMA.bat`**. Missing Python packages install themselves on the first run.

@@ -14,8 +14,12 @@
 ![kRPC](https://img.shields.io/badge/kRPC-0.6-3ddbc4)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-5b8cff)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-5b8cff)
+[![Checks](https://github.com/himsson/ASTRAUTOMA/actions/workflows/check.yml/badge.svg)](https://github.com/himsson/ASTRAUTOMA/actions/workflows/check.yml)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-f5a524)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/himsson/ASTRAUTOMA?style=flat&color=f5a524)](https://github.com/himsson/ASTRAUTOMA/stargazers)
+
+
+**[🌐 Сайт](https://himsson.github.io/ASTRAUTOMA/)**
 
 </div>
 
@@ -49,7 +53,7 @@ ASTRAUTOMA подключается к игре через kRPC, смотрит 
 1. Установите **KSP 1.12** и мод **[kRPC](https://github.com/krpc/krpc/releases)**
    (папку `GameData/kRPC` — в `GameData` игры).
 2. Установите **[Python 3.10+](https://www.python.org/downloads/)** — отметьте *Add python.exe to PATH*.
-3. Скачайте репозиторий (**Code → Download ZIP**) и распакуйте куда угодно.
+3. Скачайте **`ASTRAUTOMA-vX.zip`** из [последнего выпуска](https://github.com/himsson/ASTRAUTOMA/releases/latest) и распакуйте куда угодно.
 4. Скачайте **веса** (см. ниже) — без них у приложения нет целей полёта.
 5. Запустите KSP, загрузите сохранение, нажмите **Start Server** в окне kRPC.
 6. Запустите **`ASTRAUTOMA.bat`**. Недостающие пакеты Python поставятся сами при первом запуске.
