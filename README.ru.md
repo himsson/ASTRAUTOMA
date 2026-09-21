@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.jpg" width="150" alt="ASTRAUTOMA">
+<img src="assets/logo.png" width="320" alt="ASTRAUTOMA">
 
 # ASTRAUTOMA
 
