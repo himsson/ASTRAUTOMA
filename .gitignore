@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+
+# Logs of your own flights
+logs/*
+!logs/.gitkeep
+
+# Weights are published separately — the app ships clean
+weights/*
+!weights/.gitkeep
+*.pth
+kia_math_skills.json
+kia_global_memory.json
+kia_sim_knowledge.json
+
+# Local data: your settings, your game path, your runs
+config.json
+config.local.json
+data/parts_cache.json
+data/runs/
+kia_flight_log.*
