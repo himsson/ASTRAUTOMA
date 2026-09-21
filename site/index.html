@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ASTRAUTOMA — an autopilot for Kerbal Space Program</title>
+<meta name="description" content="Plans the flight, checks your rocket and flies it: Kerbin orbit, the Mun and every planet. Works through kRPC.">
+<meta property="og:title" content="ASTRAUTOMA — an autopilot for Kerbal Space Program">
+<meta property="og:description" content="Plans the flight, checks your rocket and flies it. Works through kRPC.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://himsson.github.io/ASTRAUTOMA/">
+<meta property="og:image" content="https://himsson.github.io/ASTRAUTOMA/logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="logo.png" type="image/png">
+<style>
+:root{--bg:#070b16;--panel:#0f1628;--card:#141d33;--line:#243152;
+  --text:#e8ecf6;--muted:#97a2bd;--accent:#ff7a2f;--accent2:#5b8cff;--mint:#3ddbc4;--gold:#f5c542}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent2)}
+#sky{position:fixed;inset:0;z-index:-1;width:100%;height:100%}
+.wrap{max-width:980px;margin:0 auto;padding:0 20px}
+
+.switch{position:fixed;top:16px;right:16px;display:flex;gap:6px;z-index:5}
+.switch button{background:rgba(20,29,51,.8);backdrop-filter:blur(6px);border:1px solid var(--line);color:var(--muted);
+  border-radius:10px;padding:7px 12px;font:600 14px inherit;cursor:pointer}
+.switch button.on{color:var(--text);border-color:var(--accent)}
+
+.hero{position:relative;text-align:center;padding:70px 0 40px}
+.patch{position:relative;width:min(340px,78vw);margin:0 auto 18px;animation:float 6s ease-in-out infinite}
+.patch img{width:100%;display:block;filter:drop-shadow(0 26px 50px rgba(255,122,47,.28)) drop-shadow(0 0 60px rgba(91,140,255,.25))}
+.patch:before{content:"";position:absolute;inset:8% 4%;border-radius:50%;border:1px dashed rgba(151,162,189,.25);
+  animation:spin 40s linear infinite}
+@keyframes float{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-14px) rotate(1.5deg)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+h1{font-size:clamp(42px,9vw,78px);font-weight:900;letter-spacing:.04em;
+  background:linear-gradient(90deg,#fff,#c9d3ea 40%,var(--accent) 60%,#fff 80%);background-size:250% 100%;
+  -webkit-background-clip:text;background-clip:text;color:transparent;animation:shine 7s linear infinite}
+@keyframes shine{to{background-position:-250% 0}}
+.tag{max-width:640px;margin:12px auto 0;font-size:clamp(18px,3.5vw,22px);color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:32px}
+.btn{display:inline-flex;align-items:center;gap:9px;height:56px;padding:0 28px;border-radius:16px;
+  font-weight:700;font-size:17px;text-decoration:none;transition:transform .15s,box-shadow .2s}
+.btn:hover{transform:translateY(-2px)}
+.btn.pri{color:#fff;background:linear-gradient(140deg,var(--accent),#e8561a);box-shadow:0 16px 36px -14px var(--accent)}
+.btn.sec{color:var(--text);background:var(--card);border:1px solid var(--line)}
+.ver{margin-top:14px;color:var(--muted);font-size:14px}
+.ver b{color:var(--mint)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:46px}
+.stat{background:rgba(15,22,40,.75);border:1px solid var(--line);border-radius:16px;padding:16px;text-align:center}
+.stat b{display:block;font-size:30px;font-weight:800;color:var(--gold)}
+.stat span{color:var(--muted);font-size:14px}
+
+section{padding:54px 0}
+h2{font-size:clamp(26px,4.6vw,34px);font-weight:800;letter-spacing:-.02em;margin-bottom:22px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+.card{background:rgba(15,22,40,.8);border:1px solid var(--line);border-radius:18px;padding:22px;transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--accent);transform:translateY(-3px)}
+.card i{font-style:normal;font-size:26px;display:block;margin-bottom:8px}
+.card b{display:block;font-size:18px;margin-bottom:6px}
+.card span{color:var(--muted);font-size:15.5px}
+
+/* live flight table */
+.term{background:#050810;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+  font:14px/1.65 "Cascadia Code",Consolas,ui-monospace,monospace;box-shadow:0 30px 70px -30px rgba(91,140,255,.45)}
+.term .bar{display:flex;gap:7px;padding:11px 14px;background:#0c1222;border-bottom:1px solid var(--line)}
+.term .bar i{width:11px;height:11px;border-radius:50%;background:#2a3452}
+.term .bar i:first-child{background:#ff5f56}.term .bar i:nth-child(2){background:#ffbd2e}.term .bar i:nth-child(3){background:#27c93f}
+.term .bar em{margin-left:auto;color:var(--muted);font-style:normal;font-size:12px}
+.term pre{padding:16px 18px;white-space:pre;overflow-x:auto;min-height:330px}
+.ok{color:#3ddb7a}.run{color:var(--accent)}.wait{color:#56607a}.add{color:var(--gold)}.dim{color:var(--muted)}
+
+.planets{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+.pl{display:flex;flex-direction:column;align-items:center;gap:8px;width:94px}
+.pl .ball{width:54px;height:54px;border-radius:50%;box-shadow:inset -10px -8px 16px rgba(0,0,0,.55),0 0 22px -4px currentColor;
+  animation:bob 5s ease-in-out infinite}
+.pl:nth-child(2n) .ball{animation-delay:-2.5s}
+@keyframes bob{50%{transform:translateY(-6px)}}
+.pl span{font-size:14px;color:var(--muted)}
+
+.shots{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}
+.shots img{width:100%;border-radius:14px;border:1px solid var(--line);display:block}
+
+.steps{counter-reset:s;display:grid;gap:12px}
+.step{display:flex;gap:16px;align-items:flex-start;background:rgba(15,22,40,.8);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.step:before{counter-increment:s;content:counter(s);flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+  font-weight:800;color:#fff;background:linear-gradient(140deg,var(--accent),#e8561a)}
+.step span{color:var(--muted)}
+.step b{color:var(--text)}
+code{font:14.5px Consolas,monospace;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--text)}
+.warn{margin-top:16px;border-left:3px solid var(--gold);background:rgba(245,197,66,.07);padding:12px 16px;border-radius:8px;color:var(--muted)}
+
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .7s,transform .7s}
+.reveal.in{opacity:1;transform:none}
+footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--muted);font-size:15px;text-align:center;background:rgba(7,11,22,.85)}
+footer a{color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+
+<div class="switch">
+  <button id="btn-en" class="on" onclick="setLang('en')">EN</button>
+  <button id="btn-ru" onclick="setLang('ru')">RU</button>
+</div>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="patch"><img src="logo.png" alt="ASTRAUTOMA"></div>
+    <h1>ASTRAUTOMA</h1>
+    <p class="tag" data-en="An autopilot for Kerbal Space Program. It plans the flight, checks your rocket and flies it."
+       data-ru="Автопилот для Kerbal Space Program. Планирует полёт, проверяет ракету и летит сам."></p>
+    <div class="btns">
+      <a class="btn pri" id="dl" href="https://github.com/himsson/ASTRAUTOMA/releases/latest"><span>⬇️</span><span data-en="Download for Windows" data-ru="Скачать для Windows"></span></a>
+      <a class="btn sec" href="https://github.com/himsson/ASTRAUTOMA"><span data-en="Source on GitHub" data-ru="Исходники на GitHub"></span></a>
+    </div>
+    <p class="ver"><span data-en="Latest release:" data-ru="Последний выпуск:"></span> <b id="ver">v1.0.0</b> · KSP 1.12 · kRPC 0.6</p>
+    <div class="stats">
+      <div class="stat"><b data-count="8">0</b><span data-en="places to fly" data-ru="мест для полёта"></span></div>
+      <div class="stat"><b data-count="6">0</b><span data-en="AI modules" data-ru="модулей ИИ"></span></div>
+      <div class="stat"><b data-count="24">0</b><span data-en="kinds of flight maths" data-ru="типов задач механики"></span></div>
+      <div class="stat"><b data-count="2">0</b><span data-en="languages" data-ru="языка"></span></div>
+    </div>
+  </div>
+</div>
+
+<section class="reveal">
+  <div class="wrap">
+    <h2 data-en="Watch it fly" data-ru="Смотри, как он летит"></h2>
+    <div class="term">
+      <div class="bar"><i></i><i></i><i></i><em>ASTRAUTOMA — DUNA-LO</em></div>
+      <pre id="flight"></pre>
+    </div>
+  </div>
+</section>
+
+<section class="reveal">
+  <div class="wrap">
+    <h2 data-en="What it does" data-ru="Что умеет"></h2>
+    <div class="grid">
+      <div class="card"><i>🚦</i><b data-en="Checks before launch" data-ru="Проверяет до старта"></b>
+        <span data-en="Green, yellow or red for Δv, fuel, TWR, control, power, comms and landing legs."
+              data-ru="Зелёный, жёлтый или красный для Δv, топлива, TWR, управления, питания, связи и опор."></span></div>
+      <div class="card"><i>🧭</i><b data-en="Plans like an engineer" data-ru="Планирует как инженер"></b>
+        <span data-en="Launch window, heading and phase angle from where the planets really are right now."
+              data-ru="Окно пуска, азимут и фазовый угол — по тому, где планеты находятся прямо сейчас."></span></div>
+      <div class="card"><i>⏱️</i><b data-en="Keeps a schedule" data-ru="Держит расписание"></b>
+        <span data-en="Arrival time on your PC clock for every step, the drift in seconds, and what changed."
+              data-ru="Время прибытия по часам ПК для каждого шага, отклонение в секундах и что изменилось."></span></div>
+      <div class="card"><i>🪐</i><b data-en="Every planet" data-ru="Все планеты"></b>
+        <span data-en="Landing, low or high orbit. Aerobraking where there is air, parachutes where they help."
+              data-ru="Посадка, низкая или высокая орбита. Аэроторможение, где есть воздух, парашюты — где помогут."></span></div>
+      <div class="card"><i>📡</i><b data-en="Keeps the link home" data-ru="Держит связь с домом"></b>
+        <span data-en="Works out how many relay satellites are needed and delivers them first."
+              data-ru="Считает, сколько нужно спутников-ретрансляторов, и доставляет их первыми."></span></div>
+      <div class="card"><i>🛠️</i><b data-en="Designs rockets" data-ru="Проектирует ракеты"></b>
+        <span data-en="Real parts from your game, with Δv and TWR for every stage."
+              data-ru="Настоящие детали из твоей игры, с Δv и TWR каждой ступени."></span></div>
+    </div>
+  </div>
+</section>
+
+<section class="reveal">
+  <div class="wrap">
+    <h2 data-en="Where it goes" data-ru="Куда летает"></h2>
+    <div class="planets">
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#7fb3ff,#2f6d3a 70%);color:#5b8cff"></div><span>Kerbin</span></div>
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#ddd,#6d6d72 70%);color:#aaa"></div><span>Mun</span></div>
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#c9a47a,#5a4030 70%);color:#b08060"></div><span>Moho</span></div>
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#c58cff,#4b2378 70%);color:#a060ff"></div><span>Eve</span></div>
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#ff9a6a,#8a3217 70%);color:#ff7a2f"></div><span>Duna</span></div>
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#cfc6b8,#5d564c 70%);color:#b8ad9c"></div><span>Dres</span></div>
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#b6f07a,#3b6b1e 70%);color:#8fd34a"></div><span>Jool</span></div>
+      <div class="pl"><div class="ball" style="background:radial-gradient(circle at 35% 30%,#f2f4f8,#7b8496 70%);color:#dde"></div><span>Eeloo</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="reveal">
+  <div class="wrap">
+    <h2 data-en="Screens" data-ru="Экраны"></h2>
+    <div class="shots">
+      <img src="shots/analysis.png" alt="Pre-flight analysis">
+      <img src="shots/design.png" alt="Rocket design">
+      <img src="shots/menu.png" alt="Menu">
+      <img src="shots/flight.png" alt="Flight table">
+    </div>
+  </div>
+</section>
+
+<section class="reveal" id="install">
+  <div class="wrap">
+    <h2 data-en="Get started" data-ru="Как начать"></h2>
+    <div class="steps">
+      <div class="step"><span data-en="Install <b>KSP 1.12</b> and the <b>kRPC</b> mod (put <code>GameData/kRPC</code> into the game)."
+        data-ru="Установи <b>KSP 1.12</b> и мод <b>kRPC</b> (папку <code>GameData/kRPC</code> — в игру)."></span></div>
+      <div class="step"><span data-en="Install <b>Python 3.10+</b> and tick <i>Add python.exe to PATH</i>."
+        data-ru="Установи <b>Python 3.10+</b> и отметь <i>Add python.exe to PATH</i>."></span></div>
+      <div class="step"><span data-en="Download <code>ASTRAUTOMA-vX.zip</code> from the release, unpack it anywhere."
+        data-ru="Скачай <code>ASTRAUTOMA-vX.zip</code> из выпуска и распакуй куда угодно."></span></div>
+      <div class="step"><span data-en="Download the weights and put them into <code>Desktop\ASTRAUTOMA Weights</code>."
+        data-ru="Скачай веса и положи их в <code>Desktop\ASTRAUTOMA Weights</code>."></span></div>
+      <div class="step"><span data-en="Start KSP, press <b>Start Server</b> in kRPC, run <code>ASTRAUTOMA.bat</code>."
+        data-ru="Запусти KSP, нажми <b>Start Server</b> в kRPC, запусти <code>ASTRAUTOMA.bat</code>."></span></div>
+    </div>
+    <p class="warn" data-en="The release has two files: <b>ASTRAUTOMA-vX.zip</b> is the program, <b>ASTRAUTOMA-Weights-*.zip</b> is its trained AI. You need both."
+       data-ru="В выпуске два файла: <b>ASTRAUTOMA-vX.zip</b> — сама программа, <b>ASTRAUTOMA-Weights-*.zip</b> — её обученный ИИ. Нужны оба."></p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span data-en="Made by" data-ru="Сделал"></span> <a href="https://github.com/himsson">himsson</a> ·
+    <a href="https://github.com/himsson/ASTRAUTOMA/blob/main/LICENSE">CC BY-NC 4.0</a> ·
+    <span data-en="Fan-made, not affiliated with Squad or Take-Two." data-ru="Фанатский проект, не связан со Squad и Take-Two."></span>
+  </div>
+</footer>
+
+<script>
+// language
+function setLang(l){
+  document.documentElement.lang=l;
+  document.querySelectorAll('[data-en]').forEach(e=>e.innerHTML=e.dataset[l]);
+  document.getElementById('btn-en').classList.toggle('on',l==='en');
+  document.getElementById('btn-ru').classList.toggle('on',l==='ru');
+  try{localStorage.setItem('lang',l)}catch(e){}
+  startFlight(l);
+}
+
+// starfield with a slow drift and the odd shooting star
+const cv=document.getElementById('sky'),cx=cv.getContext('2d');let stars=[],shoot=null;
+function size(){cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;
+  stars=Array.from({length:Math.min(260,innerWidth/4)},()=>({x:Math.random()*cv.width,y:Math.random()*cv.height,
+    r:Math.random()*1.4+.2,t:Math.random()*6,s:Math.random()*.15+.03}))}
+function sky(){cx.clearRect(0,0,cv.width,cv.height);
+  for(const s of stars){s.t+=.02;s.y+=s.s;if(s.y>cv.height)s.y=0;
+    cx.globalAlpha=.35+.45*Math.sin(s.t);cx.fillStyle='#dfe6ff';cx.beginPath();cx.arc(s.x,s.y,s.r*devicePixelRatio,0,7);cx.fill()}
+  if(!shoot&&Math.random()<.004)shoot={x:Math.random()*cv.width,y:Math.random()*cv.height*.4,l:1};
+  if(shoot){cx.globalAlpha=shoot.l;cx.strokeStyle='#ffd9b8';cx.lineWidth=1.5*devicePixelRatio;cx.beginPath();
+    cx.moveTo(shoot.x,shoot.y);cx.lineTo(shoot.x-90*devicePixelRatio,shoot.y-40*devicePixelRatio);cx.stroke();
+    shoot.x+=14*devicePixelRatio;shoot.y+=6*devicePixelRatio;shoot.l-=.03;if(shoot.l<=0)shoot=null}
+  cx.globalAlpha=1;requestAnimationFrame(sky)}
+addEventListener('resize',size);size();sky();
+
+// live flight table demo
+const STEPS={en:[['Launch window','T-00:42'],['Ascent to 80 km','+03:10'],['Circularize','+05:45'],
+  ['Transfer burn to Duna','+1:12:08'],['Course correction','+2:40:31'],['Aerocapture at Duna','+3:05:12'],
+  ['Circularize low orbit','+3:09:47']],
+  ru:[['Окно пуска','T-00:42'],['Выход на 80 км','+03:10'],['Скругление орбиты','+05:45'],
+  ['Разгон к Дюне','+1:12:08'],['Коррекция курса','+2:40:31'],['Аэрозахват у Дюны','+3:05:12'],
+  ['Низкая орбита','+3:09:47']]};
+let timer=null;
+function startFlight(l){clearTimeout(timer);const el=document.getElementById('flight');let i=0;
+  const head=l==='en'?'  STEP                              ETA        DRIFT\n':'  ШАГ                               ПРИБЫТИЕ   ОТКЛ.\n';
+  function draw(){let t=head+'<span class="dim">  '+'─'.repeat(54)+'</span>\n';
+    STEPS[l].forEach((s,k)=>{const n=s[0].padEnd(32),d=k<i?(k%3?'+0.4s':'-1.2s'):'';
+      if(k<i)t+=`<span class="ok">✓ ${n}</span>  ${s[1].padEnd(9)}  <span class="dim">${d}</span>\n`;
+      else if(k===i)t+=`<span class="run">▸ ${n}</span>  ${s[1].padEnd(9)}  <span class="run">${'●'.repeat(1+(Date.now()/400|0)%3)}</span>\n`;
+      else t+=`<span class="wait">· ${n}  ${s[1]}</span>\n`;
+      if(k===4&&i>4)t+=`<span class="add">  + ${l==='en'?'added: second correction, drift 3 m/s':'добавлено: вторая коррекция, ошибка 3 м/с'}</span>\n`});
+    t+='\n<span class="dim">  '+(i<STEPS[l].length?(l==='en'?'flying…':'летим…'):(l==='en'?'✓ mission complete':'✓ миссия выполнена'))+'</span>';
+    el.innerHTML=t}
+  (function tick(){draw();if(i<=STEPS[l].length){timer=setTimeout(()=>{i++;tick()},1400)}else timer=setTimeout(()=>startFlight(l),4000)})();
+  clearInterval(window._dots);window._dots=setInterval(draw,400)}
+
+// reveal on scroll + counters
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.reveal').forEach(e=>io.observe(e));
+document.querySelectorAll('[data-count]').forEach(e=>{const n=+e.dataset.count;let k=0;
+  const id=setInterval(()=>{e.textContent=++k;if(k>=n)clearInterval(id)},900/n)});
+
+// latest release: version + direct link to the program zip
+fetch('https://api.github.com/repos/himsson/ASTRAUTOMA/releases/latest').then(r=>r.json()).then(r=>{
+  if(!r.tag_name)return;document.getElementById('ver').textContent=r.tag_name;
+  const a=(r.assets||[]).find(a=>/^ASTRAUTOMA-v.*\.zip$/.test(a.name));
+  if(a)document.getElementById('dl').href=a.browser_download_url}).catch(()=>{});
+
+let lang='en';try{lang=localStorage.getItem('lang')||(navigator.language.startsWith('ru')?'ru':'en')}catch(e){}
+setLang(lang);
+</script>
+</body>
+</html>
