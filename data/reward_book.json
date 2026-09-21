@@ -1,0 +1,44 @@
+{
+  "milestones": {
+    "viable_design": 50.0,
+    "liftoff": 100.0,
+    "cleared_tower": 25.0,
+    "supersonic": 25.0,
+    "atmosphere_exit": 150.0,
+    "stable_orbit": 500.0,
+    "mun_node_created": 1000.0,
+    "mun_encounter": 500.0,
+    "mun_soi_entered": 1500.0,
+    "mun_orbit": 2500.0,
+    "target_landing": 3000.0,
+    "science_collected": 40.0,
+    "crew_survived": 200.0,
+    "returned_home": 1500.0
+  },
+  "failures": {
+    "design_rejected": -200.0,
+    "no_liftoff": -300.0,
+    "explosion": -1000.0,
+    "crash": -1000.0,
+    "out_of_fuel": -400.0,
+    "fuel_wasted": -200.0,
+    "out_of_electricity": -250.0,
+    "timeout": -200.0,
+    "lost_control": -350.0,
+    "connection_lost": -200.0,
+    "unexpected_error": -200.0
+  },
+  "terminal": [
+    "connection_lost",
+    "crash",
+    "design_rejected",
+    "explosion",
+    "lost_control",
+    "no_liftoff",
+    "out_of_electricity",
+    "out_of_fuel",
+    "timeout",
+    "unexpected_error"
+  ],
+  "rules": {}
+}
