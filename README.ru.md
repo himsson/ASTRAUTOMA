@@ -14,7 +14,7 @@
 ![kRPC](https://img.shields.io/badge/kRPC-0.6-3ddbc4)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-5b8cff)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-5b8cff)
-[![License](https://img.shields.io/badge/license-Apache%202.0-f5a524)](LICENSE)
+[![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-f5a524)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/himsson/ASTRAUTOMA?style=flat&color=f5a524)](https://github.com/himsson/ASTRAUTOMA/stargazers)
 
 </div>
@@ -93,5 +93,6 @@ ASTRAUTOMA — личный проект, но идеи и сообщения о
 
 ## 📄 Лицензия
 
-[Apache 2.0](LICENSE). Если используете или форкаете ASTRAUTOMA — сохраните файл [NOTICE](NOTICE) и
-укажите автора **himsson**, например: *«Основано на ASTRAUTOMA от himsson»*.
+[CC BY-NC 4.0](LICENSE). Можно бесплатно использовать, менять и делиться, но нужно указать автора
+**himsson** (например, *«Основано на ASTRAUTOMA от himsson»* со ссылкой сюда) и сохранить файл
+[NOTICE](NOTICE). **Продавать программу или то, что сделано на её основе, нельзя.**
