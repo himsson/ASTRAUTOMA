@@ -1,0 +1,38 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }} on Windows
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile every file
+        run: python -m compileall -q astra kia_core tools astrautoma.py
+      - name: Import the app without the game
+        run: |
+          pip install -q krpc protobuf Pillow
+          python -c "import astra.i18n, astra.mission, astra.planets, astra.knowledge, astra.designer; print('imports ok')"
+
+  launcher:
+    name: Launcher and package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Launcher is ASCII with CRLF
+        run: |
+          ! LC_ALL=C grep -nP '[^\x00-\x7F]' ASTRAUTOMA.bat
+          test "$(grep -c $'\r$' ASTRAUTOMA.bat)" -eq "$(wc -l < ASTRAUTOMA.bat)"
+      - name: No weights or private files in the repo
+        run: |
+          ! git ls-files | grep -Ei '\.pth$|^config(\.local)?\.json$|parts_cache\.json|kia_math_skills\.json'
