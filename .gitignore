@@ -19,3 +19,8 @@ config.local.json
 data/parts_cache.json
 data/runs/
 kia_flight_log.*
+
+# Built site (copied from assets/ and docs/ by the workflow)
+_site/
+site/logo.png
+site/shots/
