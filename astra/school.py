@@ -153,7 +153,7 @@ TITLES = {
     "antenna": ("Antenna", "Антенна"), "docking": ("Docking ports", "Стыковочные узлы"),
     "light": ("Lights", "Фары"), "reaction_wheel": ("Reaction wheels", "Маховики"),
     "science": ("Science", "Наука"), "habitat": ("Crew modules", "Жилые модули"),
-    "isru": ("Drill", "Бур"), "leg": ("Landing legs", "Опоры"), "rcs": ("RCS", "RCS"),
+    "isru": ("Drill", "Бур"), "leg": ("Landing legs", "Посадочные опоры"), "rcs": ("RCS", "RCS"),
 }
 # A craft that fits one launch: people's giant workshop builds stretch the medians,
 # so every count is capped at what one well-built craft of this kind carries.
