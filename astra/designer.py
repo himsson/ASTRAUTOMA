@@ -66,7 +66,7 @@ def part(name: str):
 @dataclass
 class DesignConfig:
     stages: int = 0          # 0 — auto by target
-    boosters: int = 0        # 0 / 2 / 4 / 6 / 8 side solid boosters
+    boosters: int = -1       # -1 — auto; 0 / 2 / 4 / 6 / 8 side solid boosters
     crew: int = 0            # 0 — probe, 1 or 3 kerbals
     payload: float = 1.0     # t, extra payload on top of the equipment
     nuclear: bool = False    # allow LV-N on vacuum stages
@@ -138,6 +138,7 @@ class Design:
     equipment_mass: float = 0.0
     top_size: float = 1.25
     similar: list = field(default_factory=list)
+    auto_boosters: bool = False
 
     @property
     def total_mass(self) -> float:
@@ -344,6 +345,27 @@ def _stage_plan(budget: ms.Budget, n: int, factor: float,
 
 
 def design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = True) -> Design:
+    """Designs the craft. With boosters on auto, every option (none, 2, 4, 6, 8)
+    is designed and the lightest feasible rocket wins — boosters only when they
+    really lift the rocket cheaper (or when it cannot leave the pad without them)."""
+    if cfg.boosters >= 0:
+        return _design(world, target, cfg, margin)
+    import copy
+    best = None
+    for n in (0, 2, 4, 6, 8):
+        c = copy.copy(cfg)
+        c.boosters = n
+        d = _design(world, target, c, margin)
+        # people's rockets carry boosters only when they pay: ask for a 4 % saving per pair
+        score = d.total_mass * (1.0 + 0.02 * n) if d.feasible else float("inf")
+        if best is None or score < best[0]:
+            best = (score, d)
+    d = best[1]
+    d.auto_boosters = True
+    return d
+
+
+def _design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = True) -> Design:
     if cfg.relay:
         from .relays import relay_target
         target = relay_target(world, target, 0, 1, 2)
@@ -510,6 +532,45 @@ def _equipment(d: Design, world: World) -> None:
             req.append((L("Parachutes", "Парашюты"), Item(chute, n_ch),
                         L(f"slow down in the {tb.name} atmosphere", f"торможение в атмосфере {tb.name}")))
             mass += part(chute).dry_mass * n_ch
+    back = getattr(target, "return_home", False)
+    have = {i.name for _, i, _ in req}
+    if back and h.atmosphere_depth > 0:
+        # coming home through Kerbin's air: heat shield first, then parachutes
+        shield = {1.25: "HeatShield1", 1.875: "HeatShield1p5", 2.5: "HeatShield2", 3.75: "HeatShield3"}.get(size, "HeatShield1")
+        if shield not in have:
+            req.append((L("Heat shield", "Теплозащитный экран"), Item(shield),
+                        L(f"entry into {h.name}'s air on the way home", f"вход в атмосферу {h.name} на обратном пути")))
+            mass += part(shield).dry_mass + part(shield).resources.get("Ablator", 0) * 0.001
+        if not any(n.startswith("parachute") for n in have):
+            chute = "parachuteRadial" if size > 1.25 else "parachuteSingle"
+            n_ch = 3 if size > 1.25 else 1
+            req.append((L("Parachutes", "Парашюты"), Item(chute, n_ch), L("touchdown at home", "посадка дома")))
+            mass += part(chute).dry_mass * n_ch
+    elif cfg.crew and h.atmosphere_depth > 0 and not any(n.startswith("parachute") for n in have):
+        chute = "parachuteRadial" if size > 1.25 else "parachuteSingle"
+        req.append((L("Parachutes", "Парашюты"), Item(chute, 3 if size > 1.25 else 1),
+                    L("the crew has to come home", "экипаж должен вернуться")))
+        mass += part(chute).dry_mass * (3 if size > 1.25 else 1)
+    if cfg.kind == "station" or (cfg.kind == "rocket" and cfg.crew >= 3):
+        # docking needs RCS and monopropellant
+        if part("RCSBlock_v2"):
+            req.append(("RCS", Item("RCSBlock_v2", 4), L("fine moves for docking", "точные сдвиги при стыковке")))
+            mass += part("RCSBlock_v2").dry_mass * 4
+        tank = "radialRCSTank" if part("radialRCSTank") else None
+        if tank:
+            req.append((L("Monopropellant", "Монотопливо"), Item(tank, 2), L("fuel for the RCS", "топливо для RCS")))
+            mass += (part(tank).dry_mass + part(tank).resources.get("MonoPropellant", 0) * 0.004) * 2
+    try:
+        from .planets import system
+        far_sun = system()[tb.name if tb.parent != "Sun" else tb.name]
+        sma = far_sun.sma if far_sun.parent == "Sun" else system()[far_sun.parent].sma
+        dim = sma > system()["Duna"].sma * 1.2            # beyond Duna the Sun is weak
+    except Exception:
+        dim = False
+    if dim and cfg.kind in ("probe", "rover", "base", "rocket") and part("rtg"):
+        req.append((L("Generator", "Генератор"), Item("rtg", 1 if cfg.kind == "rocket" else 2),
+                    L("sunlight is too weak this far out", "так далеко солнечного света мало")))
+        mass += part("rtg").dry_mass * (1 if cfg.kind == "rocket" else 2)
     if h.atmosphere_depth > 0:
         fairing = FAIRING.get(size, "fairingSize1")
         req.append((L("Fairing", "Обтекатель"), Item(fairing),
