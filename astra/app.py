@@ -27,6 +27,15 @@ def fmt(v: float) -> str:
     return analysis.fmt(v)
 
 
+def analysis_stub(vessel):
+    """What the plan builders read from a report: just the craft."""
+    class _R:
+        pass
+    r = _R()
+    r.vessel = vessel
+    return r
+
+
 # ==========================================================================
 class App:
     def __init__(self, demo: bool = False):
@@ -55,18 +64,18 @@ class App:
     def _prefill_budgets(self) -> None:
         """Δv budgets of every unlocked target, computed in the background."""
         for t in self.available_targets():
-            key = (t.code, i18n.LANG)
+            key = (t.code, i18n.LANG, t.return_home)
             if key not in self._budgets:
                 try:
-                    self._budgets[key] = ms.budget(self.world, t)
+                    self._budgets[key] = ms.budget(self.world, t, gear=True)
                 except Exception:
                     pass
 
     def budget_of(self, t: ms.Target) -> ms.Budget:
         cache = getattr(self, "_budgets", {})
-        key = (t.code, i18n.LANG)
+        key = (t.code, i18n.LANG, getattr(t, "return_home", False))
         if key not in cache:
-            cache[key] = ms.budget(self.world, t)
+            cache[key] = ms.budget(self.world, t, gear=True)
         return cache[key]
 
     def save_settings(self) -> None:
@@ -78,7 +87,11 @@ class App:
 
     def available_targets(self) -> list[ms.Target]:
         unlocked = K.unlocked_targets()
-        return [t for t in ms.targets(self.world) if t.code in unlocked]
+        ret = bool(self.settings.get("return_home", False))
+        out = [t for t in ms.targets(self.world) if t.code in unlocked]
+        for t in out:
+            t.return_home = ret
+        return out
 
     @property
     def target(self) -> ms.Target | None:
@@ -101,7 +114,8 @@ class App:
         save = wd.save_name if wd and wd.save_name else "—"
         ship = self.vessel.name if self.vessel else "—"
         tgt = self.target
-        target_txt = (f"{T.SKY}{tgt.code}{T.RESET} {T.WHITE}{tgt.title}{T.RESET}" if tgt
+        target_txt = (f"{T.SKY}{tgt.code}{T.RESET} {T.WHITE}{tgt.title}{T.RESET}"
+                      + (f" {T.OK}↩ {L('and back', 'и обратно')}{T.RESET}" if tgt.return_home else "") if tgt
                       else f"{T.BAD}{L('no flight weights', 'нет весов полёта')}{T.RESET}")
         line2 = (f" {T.MUTED}{L('save', 'сохранение')}{T.RESET} {T.WHITE}{save}{T.RESET}"
                  f"   {T.MUTED}{L('blueprint', 'чертёж')}{T.RESET} {T.WHITE}{ship}{T.RESET}"
@@ -287,6 +301,10 @@ class App:
              L("is the loaded blueprint enough for the target", "хватит ли загруженного чертежа на цель")),
             ("autopilot", L("Automatic flight", "Автоматический полёт"),
              L("build the plan and fly it", "расчёт плана и полёт по нему")),
+            ("home", L("Return home", "Вернуться домой"),
+             L("from wherever the craft is now", "откуда угодно, где сейчас аппарат")),
+            ("rendezvous", L("Rendezvous / docking", "Сближение / стыковка"),
+             L("with any craft in orbit of any body", "с любым аппаратом на орбите любого тела")),
             ("design", L("Rocket design", "Проектирование ракеты"),
              L("a rocket for the target, with real parts", "ракета под цель, из настоящих деталей")),
             ("weights", L("Weights / Knowledge", "Веса / Знания"),
@@ -303,14 +321,14 @@ class App:
         """(menu action, one-line hint) — what the player should do now."""
         wd = self.world
         if not K.installed() or self.target is None:
-            return "weights", L("Install the AI weights first — press 5, then A.",
-                                "Сначала установите веса ИИ — нажмите 5, затем A.")
+            return "weights", L("Install the AI weights first — press 7, then A.",
+                                "Сначала установите веса ИИ — нажмите 7, затем A.")
         if not (wd and wd.live):
-            return "refresh", L("Start KSP, press “Start Server” in the kRPC window, then Refresh (8).",
-                                "Запустите KSP, нажмите «Start Server» в окне kRPC, затем «Обновить» (8).")
+            return "refresh", L("Start KSP, press “Start Server” in the kRPC window, then Refresh.",
+                                "Запустите KSP, нажмите «Start Server» в окне kRPC, затем «Обновить».")
         if self.vessel is None:
-            return "design", L("No rocket yet: build one in the VAB, or let me design it (4).",
-                               "Ракеты пока нет: соберите её в VAB или дайте мне спроектировать (4).")
+            return "design", L("No rocket yet: build one in the VAB, or let me design it (6).",
+                               "Ракеты пока нет: соберите её в VAB или дайте мне спроектировать (6).")
         if not getattr(self, "_analysed", False):
             return "analysis", L("Check whether this rocket reaches the target (2).",
                                  "Проверьте, долетит ли ракета до цели (2).")
@@ -343,7 +361,7 @@ class App:
                 if extra:
                     line += "   " + extra
                 body.append(line)
-                if key in ("target", "design", "weights"):
+                if key in ("target", "autopilot", "design", "weights"):
                     body.append("")
             body += [""] + self.status_panel(w)
             if w >= 110:
@@ -363,6 +381,8 @@ class App:
             elif key == T.ENTER or (isinstance(key, str) and key.isdigit()):
                 if key != T.ENTER:
                     idx = int(key) - 1 if key != "0" else len(items) - 1
+                    if key != "0" and idx >= len(items) - 1:
+                        continue
                     if not 0 <= idx < len(items):
                         continue
                     sel = idx
@@ -464,9 +484,22 @@ class App:
             for leg in b.legs:
                 body.append(f"    {T.STEEL}•{T.RESET} {T.pad(leg.title, 48)} {T.WHITE}"
                             f"{T.pad(fmt(leg.dv), 6, 'right')} {ms_}{T.RESET}")
-            self.screen(section, body, L("↑↓ — select   Enter — set target   Esc — back",
-                                         "↑↓ — выбор   Enter — назначить цель   Esc — назад"))
+            ret = self.settings.get("return_home", False)
+            body.insert(1, f"  {T.OK if ret else T.MUTED}↩ {L('Return to Kerbin after the mission:', 'Возврат на Кербин после миссии:')} "
+                           f"{T.BOLD}{L('ON', 'ВКЛ') if ret else L('off', 'выкл')}{T.RESET}  {T.MUTED}(R){T.RESET}")
+            self.screen(section, body, L("↑↓ — select   Enter — set target   R — return home on/off   Esc — back",
+                                         "↑↓ — выбор   Enter — назначить цель   R — возврат домой вкл/выкл   Esc — назад"))
             key = T.read_key(1.0)
+            if key in ("r", "R", "к", "К"):
+                self.settings["return_home"] = not ret
+                self.save_settings()
+                items = self.available_targets()
+                res = self.work(section, [(L("Adding the way home to every budget", "Добавляю дорогу домой в каждый бюджет"),
+                                           lambda cb: {t.code: self.budget_of(t) for t in items})])
+                if res is None:
+                    return
+                budgets = res[0]
+                continue
             if key == T.UP:
                 sel = (sel - 1) % len(items)
             elif key == T.DOWN:
@@ -644,6 +677,133 @@ class App:
         if not self.preview(box["plan"]):
             return
         self.fly(box["plan"], rep)
+
+    # ======================================================================
+    # From wherever the craft is: return home, rendezvous, docking
+    # ======================================================================
+    def _live_craft(self, section: str):
+        """(body, landed, Vessel) of the active craft, or None with a message."""
+        if self.demo:
+            return "Mun", True, self.vessel
+        wd = self.world
+        if not wd.live or wd.connection is None or not wd.connection.is_alive():
+            self.world = W.reconnect(wd, self.settings)
+            wd = self.world
+        if not wd.live or not wd.connection.in_flight():
+            self.wait_key(section, [f"  {T.BAD}✗ {L('No craft in flight.', 'Нет аппарата в полёте.')}{T.RESET}", "",
+                                    "  " + L("Start KSP, switch to the craft, press “Start Server” in kRPC.",
+                                             "Запустите KSP, переключитесь на аппарат, нажмите «Start Server» в kRPC.")])
+            return None
+        v = wd.connection.space_center.active_vessel
+        sit = str(v.situation).split(".")[-1]
+        from .craft import from_krpc
+        try:
+            self.vessel = from_krpc(wd.connection)
+        except Exception:
+            pass
+        return v.orbit.body.name, sit in ("landed", "splashed", "pre_launch"), self.vessel
+
+    def _route_lines(self, plan) -> list[str]:
+        ms_ = L("m/s", "м/с")
+        need = sum(s.dv for s in plan.steps)
+        have = self.vessel.dv_vac_total if self.vessel else 0.0
+        body = []
+        for s in plan.steps:
+            if s.dv:
+                body.append(f"    {T.STEEL}•{T.RESET} {T.pad(s.title, 56)} {T.WHITE}{T.pad(fmt(s.dv), 6, 'right')} {ms_}{T.RESET}"
+                            + (f"   {T.MUTED}{s.detail}{T.RESET}" if s.detail else ""))
+        ok = have >= need * ms.MARGIN
+        col = T.OK if ok else (T.WARN if have >= need else T.BAD)
+        body += ["", f"  {col}{T.BOLD}Δv: {L('need', 'нужно')} {fmt(need)} {ms_} "
+                     f"({L('with margin', 'с запасом')} {fmt(need * ms.MARGIN)}), {L('the craft has', 'у аппарата')} {fmt(have)}{T.RESET}"]
+        return body
+
+    def do_home(self) -> None:
+        section = L("RETURN HOME", "ВОЗВРАЩЕНИЕ ДОМОЙ")
+        got = self._live_craft(section)
+        if got is None:
+            return
+        body_name, landed, _ = got
+        res = self.work(section, [(L("Planning the way home from " + body_name, "Строю дорогу домой от " + body_name),
+                                   lambda cb: autopilot.build_voyage(self.world, body_name, landed, self.world.home,
+                                                                     analysis_stub(self.vessel),
+                                                                     title=L("Return to " + self.world.home,
+                                                                             "Возвращение на " + self.world.home)))])
+        if res is None:
+            return
+        plan = res[0]
+        if not self.ask_yes(section, [f"  {T.SILVER}{L('Route:', 'Маршрут:')}{T.RESET}"] + self._route_lines(plan),
+                            L("Fly home?", "Летим домой?")):
+            return
+        if self.preview(plan):
+            self.fly(plan, None)
+
+    def do_rendezvous(self) -> None:
+        section = L("RENDEZVOUS / DOCKING", "СБЛИЖЕНИЕ / СТЫКОВКА")
+        got = self._live_craft(section)
+        if got is None:
+            return
+        body_name, landed, _ = got
+        if self.demo:
+            self.wait_key(section, ["  " + L("Needs the live game.", "Нужна живая игра.")])
+            return
+        from kia_core.pilot.rendezvous import targets as craft_in_orbit
+        res = self.work(section, [(L("Looking at every craft in orbit of every body", "Смотрю все аппараты на орбитах всех тел"),
+                                   lambda cb: craft_in_orbit(self.world.connection))])
+        if res is None:
+            return
+        groups = res[0]
+        rows = [(b, v) for b in sorted(groups, key=lambda n: (n != body_name, n)) for v in groups[b]]
+        if not rows:
+            self.wait_key(section, [f"  {T.WARN}{L('No other craft in orbit.', 'Других аппаратов на орбитах нет.')}{T.RESET}"])
+            return
+        sel, dock = 0, False
+        km = L("km", "км")
+        while True:
+            body = [f"  {T.SILVER}{L('Pick a craft. You are at', 'Выберите аппарат. Вы у')} {body_name}"
+                    f"{L(' (surface)', ' (на поверхности)') if landed else ''}.{T.RESET}", ""]
+            last = None
+            for i, (b, v) in enumerate(rows):
+                if b != last:
+                    body.append(f"  {T.SKY}{b}{T.RESET}")
+                    last = b
+                try:
+                    o = v.orbit
+                    info = f"{o.periapsis_altitude / 1000:,.0f}×{o.apoapsis_altitude / 1000:,.0f} {km}".replace(",", " ")
+                    ports = sum(1 for p in v.parts.docking_ports if "ready" in str(p.state).lower())
+                except Exception:
+                    info, ports = "", 0
+                port_txt = L(f"{ports} free ports", f"свободных узлов: {ports}") if ports else L("no ports", "нет узлов")
+                line = f"{T.pad(v.name, 34)} {T.pad(info, 22)} {T.MUTED}{port_txt}{T.RESET}"
+                body.append(f"   {T.SEL_BG}{T.FLAME} ▸ {T.RESET}{T.SEL_BG}{line}{T.RESET}" if i == sel else f"     {line}")
+            body += ["", f"  {L('Mode:', 'Режим:')} {T.WHITE}{T.BOLD}"
+                         f"{L('dock', 'стыковка') if dock else L('approach to 100 m', 'сближение до 100 м')}{T.RESET}  {T.MUTED}(D){T.RESET}"]
+            self.screen(section, body, L("↑↓ — craft   D — dock / approach   Enter — plan   Esc — back",
+                                         "↑↓ — аппарат   D — стыковка / сближение   Enter — план   Esc — назад"))
+            key = T.read_key(1.0)
+            if key == T.ESC:
+                return
+            if key == T.UP:
+                sel = (sel - 1) % len(rows)
+            elif key == T.DOWN:
+                sel = (sel + 1) % len(rows)
+            elif key in ("d", "D", "в", "В"):
+                dock = not dock
+            elif key == T.ENTER:
+                target_v = rows[sel][1]
+                res = self.work(section, [(L("Planning the way to the craft", "Строю путь к аппарату"),
+                                           lambda cb: autopilot.build_rendezvous(self.world, body_name, landed, target_v,
+                                                                                 dock, analysis_stub(self.vessel)))])
+                if res is None:
+                    continue
+                plan = res[0]
+                if dock and self.vessel and not any("docking" in p.name.lower() for p in self.vessel.parts):
+                    self.wait_key(section, [f"  {T.BAD}✗ {L('This craft has no docking port.', 'У этого аппарата нет стыковочного узла.')}{T.RESET}"])
+                    continue
+                if self.ask_yes(section, [f"  {T.SILVER}{plan.target.title}{T.RESET}"] + self._route_lines(plan),
+                                L("Fly?", "Летим?")) and self.preview(plan):
+                    self.fly(plan, None)
+                return
 
     def offer_launch(self, section: str) -> bool:
         path = craft.latest_craft(self.world.ksp_root, self.world.save_name)

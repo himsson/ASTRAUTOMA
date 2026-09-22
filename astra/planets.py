@@ -81,6 +81,31 @@ def _build_targets() -> list:
             t.planet = True
             t.objective = OBJECTIVE_OF[goal]
             out.append(t)
+    out += _moon_targets(system_)
+    return out
+
+
+MOON_OF = {"Minmus": "Kerbin", "Ike": "Duna", "Gilly": "Eve", "Laythe": "Jool", "Vall": "Jool",
+           "Tylo": "Jool", "Bop": "Jool", "Pol": "Jool"}
+
+
+def _moon_targets(system_) -> list:
+    """Moons of every planet (and Minmus): landing and low orbit, flown as a route."""
+    from .mission import Target
+    out = []
+    for name, parent in MOON_OF.items():
+        if name not in system_.bodies:
+            continue
+        body = system_[name]
+        for goal in ("L", "LO"):
+            title = (L(f"{name} ({parent}) — landing", f"{name} ({parent}) — посадка") if goal == "L"
+                     else L(f"{name} ({parent}) — low orbit", f"{name} ({parent}) — низкая орбита"))
+            t = Target(f"{name.upper()}-{goal}", title, goal, name, 0.0 if goal == "L" else body.low_orbit(),
+                       landing=goal == "L")
+            t.route = True
+            t.parent = parent
+            t.objective = OBJECTIVE_OF[goal]
+            out.append(t)
     return out
 
 

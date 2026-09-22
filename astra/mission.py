@@ -32,6 +32,9 @@ class Target:
     landing: bool = False
     planet: bool = False       # interplanetary target
     objective: str = ""        # land / low / high for planets
+    route: bool = False        # flown as a route of hops (moons of planets, Minmus)
+    parent: str = ""
+    return_home: bool = False  # come back to the home planet after the mission
 
     def label(self, world: World) -> str:
         return f"{self.code} · {self.title}"
@@ -112,6 +115,14 @@ def target_body(world: World, target: Target) -> BodyInfo:
                         b.sma, b.inc, b.lan, b.period, b.terrain)
     if target.body == world.moon:
         return world.moon_body
+    if target.body != world.home:
+        try:
+            from .planets import system as SolarSystem
+            b = SolarSystem()[target.body]
+            return BodyInfo(b.name, b.mu, b.radius, b.rotation_period, b.atmosphere, b.soi, b.parent,
+                            b.sma, b.inc, b.lan, b.period, b.terrain)
+        except Exception:
+            pass
     return world.home_body
 
 
@@ -120,7 +131,7 @@ def work_altitude(world: World, target: Target) -> float:
     if not target.landing:
         return target.altitude
     body = target_body(world, target)
-    if getattr(target, "planet", False):
+    if getattr(target, "planet", False) or getattr(target, "route", False):
         from .planets import system as SolarSystem
         return SolarSystem()[target.body].low_orbit()
     return llo_altitude(body)
@@ -224,8 +235,24 @@ def budget(world: World, target: Target, vessel=None, gear: bool = False) -> Bud
     t_asc = 300.0
     b.duration = t_asc + h.period_at(h_leo)
 
+    heat = chutes = gear
+    if vessel is not None:
+        heat = any(p.resources_max.get("Ablator", 0) > 0 for p in vessel.parts)
+        chutes = vessel.count("parachute") > 0
+
     if target.code == "LEO":
-        return b
+        return _with_return(world, target, b, heat, chutes)
+
+    if getattr(target, "route", False):
+        from . import routes as R
+        from .planets import current_ut
+        hops = R.route(h.name, target.body, land=target.landing, heatshield=heat, chutes=chutes,
+                       ut=current_ut(world))
+        for i, hop in enumerate(hops):
+            b.legs.append(Maneuver(f"v{i}", hop.title, hop.dv, hop.to, twr_min=0.2 if hop.kind != "land" else 1.5,
+                                   note=hop.note))
+        b.duration += R.duration(hops)
+        return _with_return(world, target, b, heat, chutes)
 
     if target.planet:
         from .planets import budget_legs
@@ -236,7 +263,7 @@ def budget(world: World, target: Target, vessel=None, gear: bool = False) -> Bud
         legs, duration, _ = budget_legs(world, target, heat, chutes)
         b.legs += legs
         b.duration += duration
-        return b
+        return _with_return(world, target, b, heat, chutes)
 
     if target.code == "HEO":
         dv1, dv2, t = hohmann(h, r_leo, h.radius + target.altitude)
@@ -245,7 +272,7 @@ def budget(world: World, target: Target, vessel=None, gear: bool = False) -> Bud
         b.legs.append(Maneuver("circ_high", L("High orbit circularization", "Скругление высокой орбиты"), dv2, h.name,
                                twr_min=0.2))
         b.duration += t + h.period_at(h_leo)
-        return b
+        return _with_return(world, target, b, heat, chutes)
 
     tli, v_inf, t_tr = transfer_to_moon(h, m, r_leo)
     b.legs.append(Maneuver("tli", L(f"Transfer burn to {m.name} (TLI)", f"Перелётный импульс к {m.name} (TLI)"), tli, h.name,
@@ -262,6 +289,32 @@ def budget(world: World, target: Target, vessel=None, gear: bool = False) -> Bud
                                m.name, twr_min=2.0,
                                note=L("deorbit, braking, touchdown", "сход с орбиты, гашение скорости, касание")))
         b.duration += 1200.0
+    return _with_return(world, target, b, heat, chutes)
+
+
+def return_hops(world: World, target: Target, heat: bool, chutes: bool):
+    """The way home from where the mission ends."""
+    from . import routes as R
+    from .planets import current_ut
+    return R.route(target.body, world.home, landed=target.landing, land=True,
+                   heatshield=heat, chutes=chutes, ut=current_ut(world))
+
+
+def _with_return(world: World, target: Target, b: Budget, heat: bool, chutes: bool) -> Budget:
+    if not getattr(target, "return_home", False):
+        return b
+    try:
+        hops = return_hops(world, target, heat, chutes)
+    except Exception:
+        return b
+    if target.body == world.home:                  # a home orbit: just come down
+        from . import routes as R
+        hops = [R.Hop("entry", world.home, world.home, 90.0)]
+    from . import routes as R
+    for i, hop in enumerate(hops):
+        b.legs.append(Maneuver(f"r{i}", L("Return: ", "Возврат: ") + hop.title, hop.dv, hop.to,
+                               twr_min=1.5 if hop.kind == "ascend" else 0.2, note=hop.note))
+    b.duration += R.duration(hops)
     return b
 
 

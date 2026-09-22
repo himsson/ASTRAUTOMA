@@ -250,6 +250,12 @@ def unlocked_targets() -> set[str]:
             if block.get("passed"):
                 goals = ("LO", "HO") if planet == "Jool" else ("L", "LO", "HO")
                 out |= {f"{planet.upper()}-{goal}" for goal in goals}
+    # Moons: flown with the same skills as their planet (Minmus — as the Mun)
+    from .planets import MOON_OF
+    for moon, parent in MOON_OF.items():
+        ok = ("LLO" in out) if parent == "Kerbin" else any(c.startswith(parent.upper() + "-") for c in out)
+        if ok:
+            out |= {f"{moon.upper()}-L", f"{moon.upper()}-LO"}
     return out
 
 
