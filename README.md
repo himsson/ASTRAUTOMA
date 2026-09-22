@@ -47,8 +47,8 @@ It shows its plan before liftoff and then follows it step by step in a live tabl
 - **It uses gravity assists** when a flyby of Eve or Jool is cheaper than flying direct.
 - **It keeps a link home.** If your probe would lose signal behind a planet, it tells you
   and delivers relay satellites first: as many as needed, each to its own spot in orbit.
-- **It learned to design from real craft.** 66 rockets, rovers, bases, stations and telescopes from the
-  Steam Workshop and the game taught it how people build. Pick what to carry, get engines, tanks,
+- **It learned to design from real craft** — 497 rockets, rovers, bases, stations and telescopes —
+  and **builds the craft in the VAB** for you, boosters and fairing included. Pick what to carry, get engines, tanks,
   decouplers and equipment by their in-game names, with the Δv and TWR of each stage.
 - **It adapts to your world.** Rescaled systems, CommNet settings and career limits are read from your save.
 

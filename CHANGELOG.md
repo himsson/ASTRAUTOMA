@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0 — 2026-09-22
+
+- **Builds the craft in the VAB.** In the design result press **B**: every part is placed on its real
+  attach node — pod, parachute or nose cone, stages, decouplers, fairing, adapters, boosters with nose
+  cones, fins, launch clamps, landing legs, rover wheels, panels, antennas and science. The craft is
+  checked like the game loader would, then saved to *Ships/VAB* of your save.
+- **Boosters on auto.** The designer tries none, 2, 4, 6 and 8 and keeps the lightest rocket that works.
+- **Everything the mission needs:** heat shield and parachutes for the way home, parachutes for any
+  crew, RCS and monopropellant for docking, RTGs beyond Duna, fairing on every launch from Kerbin.
+- Fixed: a probe core was taken for a fuel tank.
+- Weights **1.3**: the design school now learned from **497** craft (207 rockets, 152 probes and
+  satellites, 65 stations, 37 landers, 20 rovers, 16 bases) out of 3 700+ downloaded from GitHub,
+  the Steam Workshop, the stock game and your saves.
+
 ## 1.3.0 — 2026-09-22
 
 - **Design school.** The designer learned from 66 real craft — the Steam Workshop, the stock game and
