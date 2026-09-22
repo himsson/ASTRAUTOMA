@@ -331,3 +331,68 @@ def export_from_training(training: Path, library: Path, label: str, author: str 
     if know:
         write("Knowledge", know, {})
     return made
+
+
+# ==========================================================================
+# One-click setup: find a downloaded weights archive, unpack it, install all
+# ==========================================================================
+ALLOWED = {".pt", ".json"}
+
+
+def find_archives() -> list[Path]:
+    """Weights archives lying where people usually save downloads."""
+    home = Path.home()
+    places = [home / "Downloads", home / "Desktop", ROOT, ROOT.parent]
+    seen, out = set(), []
+    for d in places:
+        try:
+            for f in d.glob("*.zip"):
+                n = f.name.lower()
+                if "astrautoma" in n and "weight" in n and f.resolve() not in seen:
+                    seen.add(f.resolve())
+                    out.append(f)
+        except OSError:
+            continue
+    return sorted(out, key=lambda f: f.stat().st_mtime, reverse=True)
+
+
+def import_archive(zip_path: Path, settings: dict) -> int:
+    """Unpacks <Module>/<version>/<file> entries into the library.
+    Only manifests, .pt and .json files are taken; anything else is skipped."""
+    import zipfile
+    root = library_root(settings)
+    count = 0
+    with zipfile.ZipFile(zip_path) as z:
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            parts = [p for p in info.filename.replace("\\", "/").split("/") if p]
+            # the archive may have one wrapping folder ("ASTRAUTOMA Weights/...")
+            while parts and parts[0] not in MODULE_ORDER:
+                parts = parts[1:]
+            if len(parts) != 3 or ".." in parts or Path(parts[2]).suffix not in ALLOWED:
+                continue
+            dest = root / parts[0] / parts[1] / parts[2]
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(z.read(info))
+            count += 1
+    return count
+
+
+def newest(versions: list[ModuleVersion]) -> ModuleVersion | None:
+    good = [v for v in versions if not v.error]
+    return max(good, key=lambda v: (v.created, v.name)) if good else None
+
+
+def install_all(settings: dict) -> list[str]:
+    """Installs the newest good version of every module. Returns what was installed."""
+    done = []
+    for module, versions in scan_library(settings).items():
+        v = newest(versions)
+        if v is None:
+            continue
+        cur = installed().get(module)
+        if cur is None or cur.created < v.created or cur.name != v.name:
+            install(v)
+            done.append(f"{module} · {v.name}")
+    return done
