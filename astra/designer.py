@@ -516,7 +516,12 @@ def _equipment(d: Design, world: World) -> None:
 
     if cfg.kind != "rocket":
         from . import school
-        for title_, name, count, why in school.composition(cfg.kind, part):
+        kit = school.composition(cfg.kind, part)
+        replaced = {t for t, _, _, _ in kit}
+        for old in [r for r in req if r[0] in replaced]:        # the kit's own batteries and panels win
+            req.remove(old)
+            mass -= part(old[1].name).dry_mass * old[1].count
+        for title_, name, count, why in kit:
             req.append((title_, Item(name, count), why))
             mass += part(name).dry_mass * count
     big = size > 1.25

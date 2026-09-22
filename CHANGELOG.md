@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.0 — 2026-09-22
+
+- **Design school.** The designer learned from 66 real craft — the Steam Workshop, the stock game and
+  your own saves; only craft whose every part exists in the game, no planes. 42 rockets, 5 stations,
+  5 rovers, 3 bases, 7 probes and telescopes, 4 landers.
+- Rockets now follow what people build: the number of stages for the Δv, liftoff and upper-stage TWR,
+  how the Δv is split between stages, the engines people put on each stage, nose cones on boosters,
+  fins where they are usual. The result names the closest real rockets.
+- **What it carries:** rocket only, rover, surface base, space station, telescope / probe — each with
+  the kit such craft really carry (wheels, batteries, panels, antennas, docking ports, lights, science).
+- The way home now rides on the top stage together with the landing.
+- Weights **1.2** carry the design school (Builder module).
+
 ## 1.2.0 — 2026-09-22
 
 - **Every moon.** Minmus, Ike, Gilly, Laythe, Vall, Tylo, Bop and Pol — landing or low orbit,
