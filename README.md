@@ -59,11 +59,11 @@ It shows its plan before liftoff and then follows it step by step in a live tabl
 
 ## 🧠 Weights
 
-ASTRAUTOMA ships without a trained AI. Its knowledge comes as separate modules: the flight
-profile, the navigator, the mathematician and others. Put them into
-`Desktop\ASTRAUTOMA Weights\<Module>\<version>\`, open **Weights / Knowledge** in the app, pick a
-version and press **Enter**. Targets appear as soon as you install a flight profile that has
-learned them. Weight files are loaded as plain numbers, so any code hidden in a file cannot run.
+The trained AI comes as a separate download: **`ASTRAUTOMA-Weights-v1.0.zip`** from the same
+release. Save it to *Downloads* or the Desktop — on the first start ASTRAUTOMA finds it and asks
+to install it. That's it. Later, **Weights / Knowledge → A** installs the newest of everything,
+**I** imports another archive, and you can switch single modules (flight profile, pilot,
+designer, mathematician, navigator, knowledge) between versions. Weight files are loaded as plain numbers, so any code hidden in a file cannot run.
 
 ## ✨ What it can do
 

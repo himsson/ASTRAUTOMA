@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — 2026-09-22
+
+- **The autopilot does not give up.** A failed step is retried twice; then you choose:
+  retry, take manual control, or let it rescue the craft (stable orbit, parachutes or a
+  powered landing). No answer in 60 s — it rescues the craft by itself.
+- **"Next" hint** on the main menu: it tells you what to do now, and the cursor waits on it.
+- **AI setup in one key.** On the first start the app finds `ASTRAUTOMA-Weights-*.zip` in
+  Downloads or on the Desktop and installs it. In *Weights* press **A** to install everything,
+  **I** to import a downloaded archive.
+- Release page: the program (`ASTRAUTOMA-vX.zip`) and the AI (`ASTRAUTOMA-Weights-*.zip`) are
+  separate, clearly named files. The launcher keeps its Windows line endings in the zip.
+- Website, checks on every push, contributing guide, code of conduct and security policy.
+
 ## 1.0.0 — 2026-09-21
 
 First public version.
