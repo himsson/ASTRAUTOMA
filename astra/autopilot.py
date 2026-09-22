@@ -62,6 +62,11 @@ class FlightPlan:
     finished: bool = False
     success: bool = False
     verdict: str = ""
+    # Recovery: when a step fails after its retries, the flight waits for a
+    # decision — "retry", "manual" or "rescue". No answer → rescue by itself.
+    question: str = ""
+    decision: str = ""
+    decide_by: float = 0.0
 
     # --- правки плана ---------------------------------------------------
     def insert_after(self, key: str, step: Step, reason: str) -> None:
@@ -328,6 +333,7 @@ class Executor:
         self.thread: threading.Thread | None = None
         self.error = ""
         self.ctx: dict = {}
+        self.answer = threading.Event()
         self.tail = LogTail()
         logging.getLogger("kia").addHandler(self.tail)
 
@@ -600,21 +606,21 @@ class Executor:
                 s.status = SKIPPED
                 s.note = s.note or L("flight aborted by the operator", "полёт прерван оператором")
                 continue
-            s.status = RUNNING
-            s.started = time.time()
-            try:
-                ok = bool(s.run()) if s.run else True
-            except Exception as exc:
-                ok = False
-                self.error = f"{s.title}: {exc}"
-                logging.getLogger("kia").error("%s\n%s", exc, traceback.format_exc())
-            s.finished = time.time()
-            s.status = DONE if ok else FAILED
+            ok = self._attempt(s)
             if not ok and s.key not in ("mcc", "circ_fix"):
+                choice = self._ask_recovery(s)
+                if choice == "retry":
+                    i -= 1                      # the same step once more
+                    continue
                 for rest in self.plan.steps[i:]:
                     if rest.status == PENDING:
                         rest.status = SKIPPED
-                self.plan.verdict = self.error or L(f"step “{s.title}” failed", f"шаг «{s.title}» не выполнен")
+                if choice == "manual":
+                    self._hand_over()
+                    self.plan.verdict = L("control handed to the pilot", "управление передано пилоту")
+                    self.plan.finished = True
+                    return
+                self._rescue(s)
                 break
         self.plan.success = all(s.status in (DONE, SKIPPED) for s in self.plan.steps) \
             and self.plan.steps[-1].status == DONE
@@ -626,8 +632,116 @@ class Executor:
             pass
         self.plan.finished = True
 
+    # --- recovery -----------------------------------------------------------
+    RETRIES = 2
+    NO_RETRY = {"check", "liftoff", "turn", "coast", "c_entry", "c_touchdown", "touchdown",
+                "descent_coast", "done"}      # continuous phases: a repeat makes no sense
+
+    def _attempt(self, s: Step) -> bool:
+        tries = 1 if s.key in self.NO_RETRY else 1 + self.RETRIES
+        ok = False
+        for n in range(tries):
+            if self.abort.is_set():
+                break
+            if n:
+                s.mark = L(f"retry {n}/{self.RETRIES}", f"повтор {n}/{self.RETRIES}")
+                s.note = self.error
+                logging.getLogger("kia").warning("retry %s: %s", s.key, self.error)
+                try:
+                    self.ctx["ctl"].stop_warp()
+                    self.ctx["ctl"].set_throttle(0.0)
+                except Exception:
+                    pass
+                time.sleep(2.0)
+            s.status = RUNNING
+            s.started = time.time()
+            try:
+                ok = bool(s.run()) if s.run else True
+            except Exception as exc:
+                ok = False
+                self.error = f"{s.title}: {exc}"
+                logging.getLogger("kia").error("%s\n%s", exc, traceback.format_exc())
+            s.finished = time.time()
+            if ok:
+                break
+        s.status = DONE if ok else FAILED
+        return ok
+
+    def _ask_recovery(self, s: Step, wait: float = 60.0) -> str:
+        if self.abort.is_set():
+            return "rescue"
+        self.plan.question = L(f"Step “{s.title}” failed" + (f" ({self.error})" if self.error else "") + ".",
+                               f"Шаг «{s.title}» не удался" + (f" ({self.error})" if self.error else "") + ".")
+        self.plan.decision = ""
+        self.plan.decide_by = time.time() + wait
+        self.answer.clear()
+        self.answer.wait(wait)
+        choice = self.plan.decision or "rescue"
+        self.plan.question = ""
+        return choice
+
+    def decide(self, choice: str) -> None:
+        self.plan.decision = choice
+        self.answer.set()
+
+    def _hand_over(self) -> None:
+        c = self.ctx
+        try:
+            c["ctl"].set_throttle(0.0)
+            c["ctl"].stop_warp()
+            c["ctl"].disengage_autopilot(hold=False)
+            c["ctl"].set_sas(True, "stability_assist")
+        except Exception:
+            pass
+
+    def _rescue(self, failed: Step) -> None:
+        """Bring the craft into a safe state: a stable orbit, or a soft landing."""
+        c = self.ctx
+        step = Step("rescue", L("Rescue the craft", "Спасение аппарата"), wall=120.0, mark=L("added", "добавлено"))
+        self.plan.steps.append(step)
+        self.plan.changes += 1
+        step.status, step.started = RUNNING, time.time()
+        ok, how = False, ""
+        try:
+            v = c["tel"].vessel
+            body = v.orbit.body
+            atmo = body.has_atmosphere
+            pe, ap = v.orbit.periapsis_altitude, v.orbit.apoapsis_altitude
+            floor = (body.atmosphere_depth if atmo else 0.0) + 5_000.0
+            c["ctl"].stop_warp()
+            sit = str(v.situation).split(".")[-1]
+            if sit in ("pre_launch", "landed", "splashed"):
+                c["ctl"].set_throttle(0.0)
+                how, ok = L("on the ground, engines off", "на земле, двигатели выключены"), True
+            elif pe > floor:
+                how, ok = L("already in a stable orbit", "уже на устойчивой орбите"), True
+            elif ap > floor and v.orbit.time_to_apoapsis > 60:
+                how = L("circularize at apoapsis", "скругление орбиты в апоцентре")
+                ok = bool(c["man"].circularize_at_apoapsis(0.5))
+            elif atmo:
+                how = L("parachutes, retrograde", "парашюты, ретроград")
+                c["ctl"].set_throttle(0.0)
+                c["ctl"].set_sas(True, "retrograde")
+                while v.flight(body.reference_frame).mean_altitude > 5_000 and not self.abort.is_set():
+                    time.sleep(1.0)
+                c["ctl"].deploy_parachutes()
+                ok = True
+            else:
+                how = L("powered landing", "посадка на двигателях")
+                lander = self._lander()
+                ok = bool(lander.kill_horizontal()) and bool(lander.descend())
+        except Exception as exc:
+            how = how or str(exc)
+        step.detail = how
+        step.finished = time.time()
+        step.status = DONE if ok else FAILED
+        base = self.error or L(f"step “{failed.title}” failed", f"шаг «{failed.title}» не выполнен")
+        self.plan.verdict = base + " — " + (L("craft saved: ", "аппарат спасён: ") if ok
+                                            else L("rescue failed: ", "спасти не удалось: ")) + how
+
     def stop(self) -> None:
         self.abort.set()
+        self.answer.set()
         try:
             self.ctx["ctl"].set_throttle(0.0)
         except Exception:

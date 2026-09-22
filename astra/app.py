@@ -672,6 +672,11 @@ class App:
             if confirm:
                 footer = L("Abort? Y — yes, throttle to zero, stop after this step   N — continue",
                            "Прервать полёт? Y — да, газ в ноль и остановка после текущего шага   N — продолжить")
+            if plan.question and not plan.finished:
+                left = max(0, int(plan.decide_by - time.time()))
+                footer = (f"{T.WARN}▲ {plan.question}{T.RESET}  " + L(
+                    f"R — retry   M — take manual control   S — rescue the craft   (rescue in {left} s)",
+                    f"R — повторить   M — взять управление   S — спасти аппарат   (спасение через {left} с)"))
             tele = ex.telemetry_line() if ex else ""
             # The flight code writes its journal in Russian — shown in Russian mode only
             logs = ex.tail.lines if ex and i18n.ru() else None
@@ -681,6 +686,12 @@ class App:
             key = T.read_key(0.25)
             if plan.finished and key in (T.ENTER, T.ESC):
                 return
+            if plan.question and ex and not plan.finished:
+                pick = {"r": "retry", "к": "retry", "m": "manual", "ь": "manual",
+                        "s": "rescue", "ы": "rescue"}.get(str(key).lower())
+                if pick:
+                    ex.decide(pick)
+                continue
             if confirm:
                 if key in ("y", "Y", "н", "Н"):
                     if ex:
