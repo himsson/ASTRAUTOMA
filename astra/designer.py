@@ -71,11 +71,16 @@ class DesignConfig:
     payload: float = 1.0     # t, extra payload on top of the equipment
     nuclear: bool = False    # allow LV-N on vacuum stages
     relay: bool = False      # design a comms relay satellite for the target
+    kind: str = "rocket"     # what rides on top: rocket / rover / base / station / probe
 
     def stage_count(self, target: ms.Target, total_dv: float = 0.0) -> int:
-        """Auto: more Δv — more stages (each stage carries ~3 km/s at most)."""
+        """Auto: what people build for this Δv (design school), else ~3 km/s a stage."""
         if self.stages:
             return self.stages
+        from . import school
+        learned = school.stages_for(total_dv)
+        if learned:
+            return learned
         if total_dv > 8_500:
             return 4
         if getattr(target, "planet", False) or target.code in ("LLO", "HLO", "LND"):
@@ -131,6 +136,7 @@ class Design:
     optional: list[tuple[str, Item, str]] = field(default_factory=list)
     equipment_mass: float = 0.0
     top_size: float = 1.25
+    similar: list = field(default_factory=list)
 
     @property
     def total_mass(self) -> float:
@@ -222,7 +228,8 @@ def _rocket(payload: float, dv: float, isp: float, dry_fixed: float, tank_ratio:
     return (payload + dry_fixed) / denom
 
 
-def _size_stage(st: StageDesign, payload: float, nuclear: bool, min_size: float) -> None:
+def _size_stage(st: StageDesign, payload: float, nuclear: bool, min_size: float, role: int = 0) -> None:
+    from . import school
     vacuum = not st.atmospheric
     best = None
     for eng in _engines(vacuum, nuclear):
@@ -245,7 +252,7 @@ def _size_stage(st: StageDesign, payload: float, nuclear: bool, min_size: float)
             m0 = _rocket(payload, st.dv_need, isp, dry, ratio)
             if m0 is None or n * thrust_one < st.twr_need * m0 * st.g:
                 continue
-            score = m0 * (1 + 0.02 * (n - 1))
+            score = m0 * (1 + 0.02 * (n - 1)) * school.engine_bonus(role, eng.name)
             if best is None or score < best[0]:
                 best = (score, eng, n, size, family, isp, dry, m0, nerv)
     if best is None:
@@ -297,19 +304,23 @@ def _boosters(count: int, core_m0: float, dv_share: float, g: float, core_thrust
 
 # ==========================================================================
 def _stage_plan(budget: ms.Budget, n: int, factor: float,
-                split: float) -> list[tuple[str, float, bool]]:
+                split: float, learned: list[float] | None = None) -> list[tuple[str, float, bool]]:
     """(role, Δv, atmospheric) for each stage, bottom first."""
     legs = {l.key: l.dv * factor for l in budget.legs}
     asc = legs.get("ascent", 0.0)
-    after = sum(v for k, v in legs.items() if k not in ("ascent", "loi", "land"))
-    lander = legs.get("loi", 0.0) + legs.get("land", 0.0)
+    top_keys = {"loi", "land"} | {k for k in legs if k.startswith("r")}     # landing and the way home
+    after = sum(v for k, v in legs.items() if k != "ascent" and k not in top_keys)
+    lander = sum(legs[k] for k in top_keys if k in legs)
     to_orbit = L("ascent", "выведение")
     if n == 1:
         return [(L("everything", "всё"), sum(legs.values()), True)]
     top = []
     if lander and n >= 3:
-        top = [(L("capture + landing", "захват + посадка") if legs.get("land")
-                else L("capture at the Moon", "захват у Луны"), lander, False)]
+        back = any(k.startswith("r") for k in legs)
+        top = [((L("capture + landing + way home", "захват + посадка + дорога домой") if back
+                 else L("capture + landing", "захват + посадка")) if legs.get("land")
+                else (L("capture + way home", "захват + дорога домой") if back
+                      else L(f"capture at {budget.target.body}", f"захват у {budget.target.body}")), lander, False)]
         n_lower, rest_after = n - 1, after
     else:
         n_lower, rest_after = n, after + lander
@@ -317,6 +328,8 @@ def _stage_plan(budget: ms.Budget, n: int, factor: float,
         return [(to_orbit, asc + rest_after, True)] + top
     shares = {2: (split, 1 - split), 3: (0.40, 0.40, 0.20), 4: (0.33, 0.33, 0.22, 0.12)}
     parts = shares.get(n_lower, tuple([1 / n_lower] * n_lower))
+    if learned and len(learned) == n_lower:
+        parts = tuple(learned)                  # how people split the climb
     plan = []
     for i, share in enumerate(parts):
         dv = asc * share
@@ -342,13 +355,16 @@ def design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = Tr
     factor = ms.MARGIN if margin else 1.0
 
     _equipment(d, world)
+    from . import school
     n = cfg.stage_count(target, budget.total_margin)
-    plan = _stage_plan(budget, n, factor, split)
+    liftoff, second_twr, upper_twr = school.twr_targets(budget.total_margin, liftoff, upper_twr)
+    lower = n - 1 if (any(l.key in ("loi", "land") or l.key.startswith("r") for l in budget.legs) and n >= 3) else n
+    plan = _stage_plan(budget, n, factor, split, school.split_for(lower, budget.total_margin))
     labels = ["I", "II", "III", "IV", "V"]
     stages = []
     for i, (role, dv, atm) in enumerate(plan):
         is_lander = target.landing and i == len(plan) - 1 and n >= 2
-        twr = liftoff if i == 0 else (2.0 if is_lander else upper_twr)
+        twr = liftoff if i == 0 else (2.0 if is_lander else (second_twr if i == 1 else upper_twr))
         g = ms.target_body(world, target).g0 if is_lander else h.g0
         stages.append(StageDesign(L(f"Stage {labels[i]}", f"Ступень {labels[i]}"), role, dv, twr, g,
                                   atmospheric=atm))
@@ -361,8 +377,9 @@ def design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = Tr
 
     load = d.equipment_mass + cfg.payload
     min_size = d.top_size
-    for st in reversed(stages):
-        _size_stage(st, load, cfg.nuclear, min_size)
+    for idx in range(len(stages) - 1, -1, -1):
+        st = stages[idx]
+        _size_stage(st, load, cfg.nuclear, min_size, idx)
         if not st.feasible:
             st.note = L("not reachable — add a stage or boosters",
                         "недостижимо — добавьте ступень или ускорители")
@@ -378,7 +395,7 @@ def design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = Tr
                             liftoff, h.g0, atmospheric=True)
             b.engine = Item(srb.name, cfg.boosters)
             b.extras = [Item("radialDecoupler2" if srb.dry_mass > 2 else "radialDecoupler",
-                             cfg.boosters)]
+                             cfg.boosters), Item("noseCone", cfg.boosters)]       # a cone on every booster
             b.fuel_type = L("Solid Fuel", "твёрдое топливо")
             b.units = srb.resources.get("SolidFuel", 0.0) * cfg.boosters
             b.propellant = b.units * 0.0075
@@ -391,7 +408,11 @@ def design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = Tr
             stages[0].note = L("no booster lifts this rocket — try more boosters",
                                "ни один ускоритель не поднимет ракету — поставьте больше")
             stages[0].feasible = False
+    # fins where people put them: low on the first stage of an atmospheric climb
+    if stages and h.atmosphere_depth > 0 and school.share(budget.total_margin, "fins_share") >= 0.35             and not cfg.boosters:
+        stages[0].extras.append(Item("basicFin", 4))
     d.stages = stages
+    d.similar = school.similar_rockets(budget.total_margin) if school.learned() else []
     return d
 
 
@@ -493,6 +514,11 @@ def _equipment(d: Design, world: World) -> None:
                     L("over the payload for the climb", "поверх нагрузки на выведение")))
         mass += part(fairing).dry_mass
 
+    if cfg.kind != "rocket":
+        from . import school
+        for title_, name, count, why in school.composition(cfg.kind, part):
+            req.append((title_, Item(name, count), why))
+            mass += part(name).dry_mass * count
     big = size > 1.25
     opt.append((L("Parachutes", "Парашюты"),
                 Item("parachuteRadial" if big else "parachuteSingle", 3 if big else 1),
