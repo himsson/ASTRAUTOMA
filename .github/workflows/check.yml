@@ -13,8 +13,8 @@ jobs:
       matrix:
         python: ["3.10", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - name: Compile every file
@@ -28,7 +28,7 @@ jobs:
     name: Launcher and package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Launcher is ASCII with CRLF
         run: |
           ! LC_ALL=C grep -nP '[^\x00-\x7F]' ASTRAUTOMA.bat
