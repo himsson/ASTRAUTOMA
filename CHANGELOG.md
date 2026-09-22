@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.0 — 2026-09-22
+
+- **Every moon.** Minmus, Ike, Gilly, Laythe, Vall, Tylo, Bop and Pol — landing or low orbit,
+  flown as a route: out of one sphere of influence, across, down into the next.
+- **Return home from any mission.** In *Mission target* press **R**: the plan and the Δv budget get
+  the way back — lift-off, leaving the moon, the transfer home, straight into Kerbin's air, parachutes.
+  **Return home** in the menu brings any craft back from wherever it is right now.
+- **Rendezvous and docking.** The app lists every craft in orbit of every body; pick one and it
+  flies there, matches planes, finds the intercept with the game's own orbit prediction, stops next
+  to it and, if you ask, docks port to port on RCS (the thrusters are calibrated by itself).
+- **Gravity assists.** Trips to other planets try a flyby of every other planet on exact Lambert
+  arcs; the flyby is used only when it saves at least 50 m/s (Moho via Eve −790 m/s, Eeloo via
+  Jool −685 m/s). Weights 1.1 ship a 20-year atlas of the best assists.
+- Leaving a moon for another planet no longer dives to a low parking orbit first (Tylo → Kerbin
+  4.6 km/s instead of 6.4).
+- Fixed: capture at any body other than Kerbin, Mun, Minmus or Duna stopped with an error.
+- The new skills are unlocked by weights **1.1**, released on their own.
+
 ## 1.1.0 — 2026-09-22
 
 - **The autopilot does not give up.** A failed step is retried twice; then you choose:

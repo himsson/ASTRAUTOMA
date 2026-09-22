@@ -116,11 +116,12 @@ footer a{color:var(--muted)}
        data-ru="Автопилот для Kerbal Space Program. Планирует полёт, проверяет ракету и летит сам."></p>
     <div class="btns">
       <a class="btn pri" id="dl" href="https://github.com/himsson/ASTRAUTOMA/releases/latest"><span>⬇️</span><span data-en="Download for Windows" data-ru="Скачать для Windows"></span></a>
+      <a class="btn sec" id="dlw" href="https://github.com/himsson/ASTRAUTOMA/releases"><span>🧠</span><span data-en="AI weights" data-ru="Веса ИИ"></span> <small class="n" style="opacity:.6;font-weight:500"></small></a>
       <a class="btn sec" href="https://github.com/himsson/ASTRAUTOMA"><span data-en="Source on GitHub" data-ru="Исходники на GitHub"></span></a>
     </div>
     <p class="ver"><span data-en="Latest release:" data-ru="Последний выпуск:"></span> <b id="ver">v1.0.0</b> · KSP 1.12 · kRPC 0.6</p>
     <div class="stats">
-      <div class="stat"><b data-count="8">0</b><span data-en="places to fly" data-ru="мест для полёта"></span></div>
+      <div class="stat"><b data-count="15">0</b><span data-en="worlds to land on or orbit" data-ru="миров для посадки и орбиты"></span></div>
       <div class="stat"><b data-count="6">0</b><span data-en="AI modules" data-ru="модулей ИИ"></span></div>
       <div class="stat"><b data-count="24">0</b><span data-en="kinds of flight maths" data-ru="типов задач механики"></span></div>
       <div class="stat"><b data-count="2">0</b><span data-en="languages" data-ru="языка"></span></div>
@@ -157,6 +158,15 @@ footer a{color:var(--muted)}
       <div class="card"><i>📡</i><b data-en="Keeps the link home" data-ru="Держит связь с домом"></b>
         <span data-en="Works out how many relay satellites are needed and delivers them first."
               data-ru="Считает, сколько нужно спутников-ретрансляторов, и доставляет их первыми."></span></div>
+      <div class="card"><i>↩️</i><b data-en="Comes back home" data-ru="Возвращается домой"></b>
+        <span data-en="From any mission, moon or planet: lift-off, the way back, heat shield, parachutes."
+              data-ru="С любой миссии, спутника или планеты: взлёт, дорога назад, теплозащита, парашюты."></span></div>
+      <div class="card"><i>🛰️</i><b data-en="Rendezvous and docking" data-ru="Сближение и стыковка"></b>
+        <span data-en="Pick any craft in orbit of any body — it flies there, matches orbits and docks port to port."
+              data-ru="Выбери любой аппарат на орбите любого тела — долетит, уравняет орбиты и пристыкуется."></span></div>
+      <div class="card"><i>🪃</i><b data-en="Gravity assists" data-ru="Гравитационные манёвры"></b>
+        <span data-en="Flies past Eve or Jool when it is cheaper: up to 800 m/s saved on the way to Moho or Eeloo."
+              data-ru="Пролетает мимо Ив или Джула, когда так дешевле: до 800 м/с экономии по пути к Мохо или Илу."></span></div>
       <div class="card"><i>🛠️</i><b data-en="Designs rockets" data-ru="Проектирует ракеты"></b>
         <span data-en="Real parts from your game, with Δv and TWR for every stage."
               data-ru="Настоящие детали из твоей игры, с Δv и TWR каждой ступени."></span></div>
@@ -207,8 +217,8 @@ footer a{color:var(--muted)}
       <div class="step"><span data-en="Start KSP, press <b>Start Server</b> in kRPC, run <code>ASTRAUTOMA.bat</code>."
         data-ru="Запусти KSP, нажми <b>Start Server</b> в kRPC, запусти <code>ASTRAUTOMA.bat</code>."></span></div>
     </div>
-    <p class="warn" data-en="The release has two files: <b>ASTRAUTOMA-vX.zip</b> is the program, <b>ASTRAUTOMA-Weights-*.zip</b> is its trained AI. You need both."
-       data-ru="В выпуске два файла: <b>ASTRAUTOMA-vX.zip</b> — сама программа, <b>ASTRAUTOMA-Weights-*.zip</b> — её обученный ИИ. Нужны оба."></p>
+    <p class="warn" data-en="Two downloads: <b>ASTRAUTOMA-vX.zip</b> is the program, <b>ASTRAUTOMA-Weights-*.zip</b> is its trained AI (released on its own). You need both — the buttons above fetch the newest of each."
+       data-ru="Два файла: <b>ASTRAUTOMA-vX.zip</b> — сама программа, <b>ASTRAUTOMA-Weights-*.zip</b> — её обученный ИИ (выходит отдельным выпуском). Нужны оба — кнопки выше берут новейшие."></p>
   </div>
 </section>
 
@@ -274,10 +284,16 @@ document.querySelectorAll('[data-count]').forEach(e=>{const n=+e.dataset.count;l
   const id=setInterval(()=>{e.textContent=++k;if(k>=n)clearInterval(id)},900/n)});
 
 // latest release: version + direct link to the program zip
-fetch('https://api.github.com/repos/himsson/ASTRAUTOMA/releases/latest').then(r=>r.json()).then(r=>{
-  if(!r.tag_name)return;document.getElementById('ver').textContent=r.tag_name;
-  const a=(r.assets||[]).find(a=>/^ASTRAUTOMA-v.*\.zip$/.test(a.name));
-  if(a)document.getElementById('dl').href=a.browser_download_url}).catch(()=>{});
+// newest program zip and newest weights zip — they may live in different releases
+fetch('https://api.github.com/repos/himsson/ASTRAUTOMA/releases?per_page=30').then(r=>r.json()).then(rs=>{
+  let app=null,ai=null;
+  for(const r of rs){ if(r.draft)continue;
+    for(const a of r.assets||[]){
+      if(!app&&/^ASTRAUTOMA-v.*\.zip$/.test(a.name))app={a,tag:r.tag_name};
+      if(!ai&&/^ASTRAUTOMA-Weights-.*\.zip$/.test(a.name))ai={a,tag:r.tag_name};}}
+  if(app){document.getElementById('ver').textContent=app.tag;document.getElementById('dl').href=app.a.browser_download_url}
+  if(ai){const w=document.getElementById('dlw');w.href=ai.a.browser_download_url;w.querySelector('.n').textContent=ai.a.name.replace('.zip','')}
+}).catch(()=>{});
 
 let lang='en';try{lang=localStorage.getItem('lang')||(navigator.language.startsWith('ru')?'ru':'en')}catch(e){}
 setLang(lang);

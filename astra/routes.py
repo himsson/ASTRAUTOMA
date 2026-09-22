@@ -233,7 +233,7 @@ def _across(a: str, b: str, parent: str, heat: bool, ut, assists: bool) -> Hop:
     arr = 80.0 if aero else burn_from_orbit(b, low_orbit(b), v2)
     h = Hop("across", a, b, dep + arr, tof, aero, arr=arr)
     h._vinf_arr = v2
-    if assists and parent == SUN:
+    if assists and parent == SUN and _can("assists"):
         from . import gravity
         best = gravity.best_assist(a, b, ut or 0.0, heat)
         if best is not None and best.total + 50.0 < h.dv:
@@ -256,3 +256,11 @@ def duration(hops: list[Hop]) -> float:
 def where(vessel_body: str, situation: str) -> tuple[str, bool]:
     """(body, landed) of a craft from kRPC's orbit body and situation."""
     return vessel_body, situation in ("landed", "splashed", "pre_launch")
+
+
+def _can(skill: str) -> bool:
+    try:
+        from .knowledge import capabilities
+        return bool(capabilities().get(skill))
+    except Exception:
+        return False

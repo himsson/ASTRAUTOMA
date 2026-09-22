@@ -39,8 +39,12 @@ It shows its plan before liftoff and then follows it step by step in a live tabl
   and the transfer phase angle from where the Mun and the planets really are right now.
 - **It keeps to a schedule.** Every step shows an arrival time on your PC clock and how many seconds
   it is ahead or behind. When something goes wrong, it changes the plan and marks what it added or changed.
-- **It goes to every planet.** Moho, Eve, Duna, Dres, Jool, Eeloo: landing, low orbit or high orbit.
-  It aerobrakes where there is air and uses parachutes where they help.
+- **It goes to every planet and every moon.** Moho, Eve, Duna, Dres, Jool, Eeloo and their moons,
+  from Minmus to Tylo. It aerobrakes where there is air and uses parachutes where they help.
+- **It comes back.** Any mission can end at home: lift-off, the way back, heat shield, parachutes.
+  **Return home** brings a craft back from wherever it is.
+- **It docks.** Pick any craft in orbit of any body: it flies there, matches orbits and docks.
+- **It uses gravity assists** when a flyby of Eve or Jool is cheaper than flying direct.
 - **It keeps a link home.** If your probe would lose signal behind a planet, it tells you
   and delivers relay satellites first: as many as needed, each to its own spot in orbit.
 - **It designs rockets from real parts.** Pick stages, boosters and crew, and get engines, tanks,
@@ -59,8 +63,8 @@ It shows its plan before liftoff and then follows it step by step in a live tabl
 
 ## 🧠 Weights
 
-The trained AI comes as a separate download: **`ASTRAUTOMA-Weights-v1.0.zip`** from the same
-release. Save it to *Downloads* or the Desktop — on the first start ASTRAUTOMA finds it and asks
+The trained AI comes as a separate download: **`ASTRAUTOMA-Weights-v*.zip`** from its own
+[weights release](https://github.com/himsson/ASTRAUTOMA/releases). Save it to *Downloads* or the Desktop — on the first start ASTRAUTOMA finds it and asks
 to install it. That's it. Later, **Weights / Knowledge → A** installs the newest of everything,
 **I** imports another archive, and you can switch single modules (flight profile, pilot,
 designer, mathematician, navigator, knowledge) between versions. Weight files are loaded as plain numbers, so any code hidden in a file cannot run.

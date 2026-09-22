@@ -250,9 +250,10 @@ def unlocked_targets() -> set[str]:
             if block.get("passed"):
                 goals = ("LO", "HO") if planet == "Jool" else ("L", "LO", "HO")
                 out |= {f"{planet.upper()}-{goal}" for goal in goals}
-    # Moons: flown with the same skills as their planet (Minmus — as the Mun)
+    # Moons: flown with the same skills as their planet (Minmus — as the Mun),
+    # once the flight profile has learned routes between bodies
     from .planets import MOON_OF
-    for moon, parent in MOON_OF.items():
+    for moon, parent in (MOON_OF.items() if capabilities().get("moons") else ()):
         ok = ("LLO" in out) if parent == "Kerbin" else any(c.startswith(parent.upper() + "-") for c in out)
         if ok:
             out |= {f"{moon.upper()}-L", f"{moon.upper()}-LO"}
@@ -402,3 +403,27 @@ def install_all(settings: dict) -> list[str]:
             install(v)
             done.append(f"{module} · {v.name}")
     return done
+
+
+def capabilities() -> dict:
+    """Skills beyond mission targets, carried by the flight profile:
+    moons, return, rendezvous, docking, assists."""
+    return dict(genome().get("capabilities", {}))
+
+
+def assist_atlas() -> dict:
+    """Gravity-assist atlas shipped in the Navigator module (or {})."""
+    path = INSTALLED / "Navigator" / "assists.json"
+    try:
+        stamp = path.stat().st_mtime
+    except OSError:
+        return {}
+    if _ATLAS_CACHE.get("stamp") != stamp:
+        try:
+            _ATLAS_CACHE.update(stamp=stamp, data=json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            return {}
+    return _ATLAS_CACHE["data"]
+
+
+_ATLAS_CACHE: dict = {}
