@@ -915,11 +915,14 @@ class App:
         if self.no_target(section):
             return
         cfg = self.design_cfg
-        rows = ["relay", "stages", "boosters", "crew", "payload", "nuclear", "go"]
+        rows = ["kind", "relay", "stages", "boosters", "crew", "payload", "nuclear", "go"]
         auto_dv = ms.budget(self.world, self.target, gear=True).total_margin   # once, not per redraw
         sel = 0
         while True:
             def val(key):
+                if key == "kind":
+                    from . import school
+                    return school.kind_title(cfg.kind)
                 if key == "relay":
                     return (L("relay satellite for this target", "спутник-ретранслятор для этой цели")
                             if cfg.relay else L("main craft", "основной аппарат"))
@@ -937,7 +940,7 @@ class App:
                 if key == "nuclear":
                     return L("allowed on vacuum stages", "можно на вакуумных ступенях") if cfg.nuclear else L("no", "нет")
                 return ""
-            names = {"relay": L("Mission", "Задача"), "stages": L("Stages", "Ступеней"), "boosters": L("Side boosters", "Боковые ускорители"),
+            names = {"kind": L("What it carries", "Что везёт"), "relay": L("Mission", "Задача"), "stages": L("Stages", "Ступеней"), "boosters": L("Side boosters", "Боковые ускорители"),
                      "crew": L("Crew", "Экипаж"), "payload": L("Extra payload", "Доп. нагрузка"),
                      "nuclear": L("Nuclear engine LV-N", "Ядерный двигатель LV-N"),
                      "go": L("▶ Design the rocket", "▶ Спроектировать ракету")}
@@ -963,7 +966,10 @@ class App:
             elif key == T.DOWN:
                 sel = (sel + 1) % len(rows)
             elif step:
-                if row == "relay":
+                if row == "kind":
+                    from . import school
+                    cfg.kind = school.KINDS[(school.KINDS.index(cfg.kind) + step) % len(school.KINDS)]
+                elif row == "relay":
                     cfg.relay = not cfg.relay
                 elif row == "stages":
                     cfg.stages = (cfg.stages + step) % 5
@@ -1033,6 +1039,13 @@ class App:
         for kind, item, why in d.optional:
             body.append(f"   {T.SKY}○{T.RESET} {T.pad(kind, 20)} {T.WHITE}{item.title}{T.RESET} × {item.count}"
                         + (f"   {T.MUTED}{why}{T.RESET}" if why else ""))
+        from . import school
+        if school.learned():
+            n = school.data().get("dataset", {}).get("used", 0)
+            body += ["", f"  {T.SKY}{L('Design school', 'Школа конструктора')}:{T.RESET} {T.MUTED}"
+                         + L(f"stages, TWR and the Δv split follow {n} real craft; closest: ",
+                             f"ступени, TWR и раскладка Δv — по {n} настоящим аппаратам; ближе всего: ")
+                         + ", ".join(d.similar) + T.RESET]
         body += ["", f"  {T.MUTED}{L('Masses and Δv are computed from the real parts above. TWR targets come from the trained designer profile.', 'Массы и Δv посчитаны по реальным деталям выше. Требования к TWR — из обученного профиля конструктора.')}{T.RESET}"]
         return body
 
