@@ -43,8 +43,9 @@ def main() -> None:
             if not folder.is_dir():
                 raise SystemExit(f"missing {folder}")
             base = f"{module}/{name}"
+            replaced = {f.name for f in extra.get(module, [])}
             for f in folder.iterdir():
-                if f.name == "manifest.json":
+                if f.name == "manifest.json" or f.name in replaced:
                     continue
                 if module == "FlightProfile" and f.name == "genome.json":
                     g = json.loads(f.read_text(encoding="utf-8"))
