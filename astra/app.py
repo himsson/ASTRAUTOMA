@@ -931,6 +931,8 @@ class App:
                     return (L(f"auto ({auto})", f"авто ({auto})")
                             if not cfg.stages else str(cfg.stages))
                 if key == "boosters":
+                    if cfg.boosters < 0:
+                        return L("auto — only if they pay off", "авто — только если выгодно")
                     return L("none", "нет") if not cfg.boosters else L(f"{cfg.boosters} solid", f"{cfg.boosters} твердотопливных")
                 if key == "crew":
                     return {0: L("probe (no crew)", "зонд (без экипажа)"), 1: L("1 kerbal", "1 кербонавт"),
@@ -975,6 +977,7 @@ class App:
                     cfg.stages = (cfg.stages + step) % 5
                 elif row == "boosters":
                     opts = [0, 2, 4, 6, 8]
+                    opts = [-1] + opts
                     cfg.boosters = opts[(opts.index(cfg.boosters) + step) % len(opts)]
                 elif row == "crew":
                     opts = [0, 1, 3]
