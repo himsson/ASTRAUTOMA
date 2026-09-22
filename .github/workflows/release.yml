@@ -40,12 +40,12 @@ jobs:
           | File | What it is |
           |---|---|
           | **ASTRAUTOMA-$TAG.zip** | **The program.** Unpack and run \`ASTRAUTOMA.bat\`. |
-          | ASTRAUTOMA-Weights-*.zip | The trained AI. Unpack into \`Desktop\ASTRAUTOMA Weights\`, then install it in the app under *Weights / Knowledge*. |
+          | ASTRAUTOMA-Weights-*.zip | The trained AI — in its own [weights release](https://github.com/${{ github.repository }}/releases?q=weights). Save it to Downloads: the app finds and installs it. |
 
           You need **both**. *Source code* archives are for developers.
 
           **Какой файл качать?** \`ASTRAUTOMA-$TAG.zip\` — сама программа (запуск через \`ASTRAUTOMA.bat\`),
-          \`ASTRAUTOMA-Weights-*.zip\` — обученный ИИ. Нужны оба.
+          \`ASTRAUTOMA-Weights-*.zip\` — обученный ИИ из отдельного выпуска весов. Нужны оба.
 
           Requires KSP 1.12, the kRPC mod and Python 3.10+. Full list of changes: [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
           NOTES
