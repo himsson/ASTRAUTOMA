@@ -299,12 +299,33 @@ class App:
             ("exit", L("Exit", "Выход"), ""),
         ]
 
+    def next_step(self) -> tuple[str, str]:
+        """(menu action, one-line hint) — what the player should do now."""
+        wd = self.world
+        if not K.installed() or self.target is None:
+            return "weights", L("Install the AI weights first — press 5, then A.",
+                                "Сначала установите веса ИИ — нажмите 5, затем A.")
+        if not (wd and wd.live):
+            return "refresh", L("Start KSP, press “Start Server” in the kRPC window, then Refresh (8).",
+                                "Запустите KSP, нажмите «Start Server» в окне kRPC, затем «Обновить» (8).")
+        if self.vessel is None:
+            return "design", L("No rocket yet: build one in the VAB, or let me design it (4).",
+                               "Ракеты пока нет: соберите её в VAB или дайте мне спроектировать (4).")
+        if not getattr(self, "_analysed", False):
+            return "analysis", L("Check whether this rocket reaches the target (2).",
+                                 "Проверьте, долетит ли ракета до цели (2).")
+        return "autopilot", L("All set — start the automatic flight (3).",
+                              "Всё готово — запускайте автоматический полёт (3).")
+
     def main_menu(self) -> None:
-        sel = 0
+        self.offer_weights()
+        rec0 = self.next_step()[0]
+        sel = next((i for i, it in enumerate(self.menu_items()) if it[0] == rec0), 0)
         while True:
             items = self.menu_items()
             w, _ = T.size()
-            body = []
+            rec, hint = self.next_step()
+            body = [f"  {T.FLAME}★{T.RESET} {T.WHITE}{L('Next:', 'Дальше:')}{T.RESET} {T.SILVER}{hint}{T.RESET}", ""]
             for i, (key, title, desc) in enumerate(items):
                 num = str(i + 1) if key != "exit" else "0"
                 extra = ""
@@ -312,6 +333,8 @@ class App:
                     tgt = self.target
                     extra = (f"{T.SKY}{tgt.code}{T.RESET} {T.WHITE}{tgt.title}{T.RESET}" if tgt
                              else f"{T.BAD}{L('locked — install weights', 'закрыто — установите веса')}{T.RESET}")
+                if key == rec:
+                    title = title + " ★"
                 if i == sel:
                     line = (f"  {T.SEL_BG}{T.FLAME} ▸ {T.WHITE}{T.BOLD}{num}  {T.pad(title, 26)}"
                             f"{T.RESET}{T.SEL_BG} {T.pad(T.MUTED + desc, 52)}{T.RESET}")
@@ -347,6 +370,9 @@ class App:
                 if action == "exit":
                     return
                 getattr(self, f"do_{action}")()
+                nxt = self.next_step()[0]
+                if nxt != rec:
+                    sel = next((i for i, it in enumerate(self.menu_items()) if it[0] == nxt), sel)
 
     def _corner_logo(self) -> list[str]:
         """Static patch logo for the menu corner — drawn once, then reused."""
@@ -387,7 +413,8 @@ class App:
         unlocked = sorted(K.unlocked_targets())
         rows.append(f"{T.MUTED}{T.pad(L('Weights', 'Веса'), 11)}{T.RESET}"
                     + L(f"modules {len(inst)}/{len(K.MODULE_ORDER)}", f"модулей {len(inst)}/{len(K.MODULE_ORDER)}")
-                    + "   " + (L("targets: ", "цели: ") + ", ".join(unlocked) if unlocked
+                    + "   " + (L(f"{len(unlocked)} targets: ", f"целей {len(unlocked)}: ")
+                             + ", ".join(sorted({t.body for t in self.available_targets()})) if unlocked
                                else f"{T.BAD}{L('no targets unlocked', 'цели не открыты')}{T.RESET}"))
         for note in wd.notes:
             rows.append(f"{T.WARN}▲ {note}{T.RESET}")
@@ -503,6 +530,7 @@ class App:
         ])
         if res is None:
             return
+        self._analysed = True
         self.wait_key(section, self.analysis_lines(res[2]),
                       L("Enter / Esc — back      green — fine · yellow — marginal · red — not enough",
                         "Enter / Esc — назад      зелёный — норма · жёлтый — на грани · красный — не хватит"))
@@ -834,6 +862,44 @@ class App:
     # ======================================================================
     # Weights / knowledge
     # ======================================================================
+    def offer_weights(self) -> None:
+        """First start without weights: find the downloaded archive and set it up."""
+        if K.installed() or self.settings.get("weights_offer_declined"):
+            return
+        section = L("AI WEIGHTS", "ВЕСА ИИ")
+        zips = K.find_archives()
+        lib = K.scan_library(self.settings)
+        have_lib = any(lib.values())
+        if not zips and not have_lib:
+            return
+        src = zips[0] if zips else K.library_root(self.settings)
+        if not self.ask_yes(section, [
+                f"  {T.WHITE}{L('ASTRAUTOMA has no AI installed yet — it cannot fly without it.', 'В ASTRAUTOMA ещё не установлен ИИ — без него он не летает.')}{T.RESET}", "",
+                "  " + L("Found:", "Нашёл:") + f" {T.SKY}{src}{T.RESET}"],
+                L("Install it now?", "Установить сейчас?")):
+            self.settings["weights_offer_declined"] = True
+            self.save_settings()
+            return
+        self._install_everything(section, zips[0] if zips else None)
+
+    def _install_everything(self, section: str, archive) -> str:
+        steps = []
+        if archive is not None:
+            steps.append((L(f"Unpacking {archive.name}", f"Распаковываю {archive.name}"),
+                          lambda cb: K.import_archive(archive, self.settings)))
+        steps.append((L("Checking and installing every module", "Проверяю и устанавливаю все модули"),
+                      lambda cb: K.install_all(self.settings)))
+        res = self.work(section, steps)
+        if res is None:
+            return f"{T.BAD}✗ {L('Not installed', 'Не установлено')}{T.RESET}"
+        self.detect_targets()
+        n = len(self.available_targets())
+        return f"{T.OK}✓ {L(f'AI installed — {n} targets open', f'ИИ установлен — открыто целей: {n}')}{T.RESET}"
+
+    def detect_targets(self) -> None:
+        self._budgets = {}
+        threading.Thread(target=self._prefill_budgets, daemon=True).start()
+
     def do_weights(self) -> None:
         section = L("WEIGHTS / KNOWLEDGE", "ВЕСА / ЗНАНИЯ")
         sel, ver = 0, 0
@@ -870,8 +936,10 @@ class App:
             if message:
                 body += ["", "  " + message]
             self.screen(section, body, L(
-                "↑↓ — module   ←→ — version   Enter — install   Del / R — remove   O — open library   Esc — back",
-                "↑↓ — модуль   ←→ — версия   Enter — установить   Del / R — убрать   O — открыть библиотеку   Esc — назад"))
+                "A — install all (newest)   I — import a downloaded .zip   ↑↓ — module   ←→ — version   "
+                "Enter — install   Del — remove   O — folder   Esc — back",
+                "A — установить всё (новейшее)   I — импорт скачанного .zip   ↑↓ — модуль   ←→ — версия   "
+                "Enter — установить   Del — убрать   O — папка   Esc — назад"))
             key = T.read_key(1.0)
             if key == T.ESC:
                 return
@@ -893,6 +961,14 @@ class App:
                 if mod in inst:
                     K.remove(mod)
                     message = f"{T.WARN}{L('Removed', 'Убрано')}: {mod}{T.RESET}"
+            elif key in ("a", "A", "ф", "Ф"):
+                message = self._install_everything(section, None)
+            elif key in ("i", "I", "ш", "Ш"):
+                zips = K.find_archives()
+                if not zips:
+                    message = f"{T.WARN}{L('No ASTRAUTOMA-Weights*.zip in Downloads or on the Desktop.', 'Нет ASTRAUTOMA-Weights*.zip в «Загрузках» или на рабочем столе.')}{T.RESET}"
+                else:
+                    message = self._install_everything(section, zips[0])
             elif key in ("o", "O", "щ", "Щ"):
                 try:
                     root.mkdir(parents=True, exist_ok=True)
