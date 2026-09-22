@@ -992,11 +992,41 @@ class App:
                      lambda cb: designer.design(self.world, self.target, cfg, margin=True)),
                 ])
                 if res:
-                    self.wait_key(section, self.design_lines(res[0]),
-                                  L("↑↓ — scroll   Enter / Esc — back to the settings",
-                                    "↑↓ — прокрутка   Enter / Esc — назад к настройкам"))
+                    self.show_design(section, res[0])
             elif key == T.ESC:
                 return
+
+    def show_design(self, section: str, d: designer.Design) -> None:
+        """The design; B builds it as a real craft in the VAB."""
+        from . import vab
+        note = ""
+        while True:
+            body = self.design_lines(d)
+            if note:
+                body = [note, ""] + body
+            key = self.wait_key(section, body, L(
+                "B — build it in the VAB   ↑↓ — scroll   Enter / Esc — back to the settings",
+                "B — собрать в VAB   ↑↓ — прокрутка   Enter / Esc — назад к настройкам"))
+            if key in ("b", "B", "и", "И"):
+                if not d.feasible:
+                    note = f"  {T.BAD}✗ {L('This design is not feasible — change the settings first.', 'Проект недостижим — сначала измените настройки.')}{T.RESET}"
+                    continue
+                res = self.work(section, [(L("Placing every part on its attach node", "Ставлю каждую деталь на её узел крепления"),
+                                           lambda cb: vab.build(self.world, d))])
+                if res is None:
+                    continue
+                path, problems = res[0]
+                if path is None:
+                    note = f"  {T.BAD}✗ {L('Not built:', 'Не собрано:')} {'; '.join(problems[:3])}{T.RESET}"
+                else:
+                    extra = (L(f" Put your own {d.config.payload:.2f} t payload under the fairing.",
+                               f" Свою нагрузку {d.config.payload:.2f} т поставьте под обтекатель.")
+                             if d.config.payload > 0 else "")
+                    note = (f"  {T.OK}✓ {L('Built:', 'Собрано:')} {T.WHITE}{path.stem}{T.RESET}{T.OK} — "
+                            + L("open the VAB → Load, it is in the list.", "откройте VAB → «Загрузить», он в списке.")
+                            + extra + T.RESET)
+                continue
+            return
 
     def design_lines(self, d: designer.Design) -> list[str]:
         ms_, t_, kn = L("m/s", "м/с"), L("t", "т"), L("kN", "кН")

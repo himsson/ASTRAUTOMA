@@ -72,6 +72,7 @@ class DesignConfig:
     nuclear: bool = False    # allow LV-N on vacuum stages
     relay: bool = False      # design a comms relay satellite for the target
     kind: str = "rocket"     # what rides on top: rocket / rover / base / station / probe
+    buildable: bool = True   # one engine per stage — what the VAB builder can place
 
     def stage_count(self, target: ms.Target, total_dv: float = 0.0) -> int:
         """Auto: what people build for this Δv (design school), else ~3 km/s a stage."""
@@ -184,8 +185,8 @@ def _engines(vacuum: bool, nuclear: bool):
 def _tanks(size: float, lf_only: bool = False):
     out = []
     for p in catalog().parts.values():
-        if p.is_engine:
-            continue
+        if p.is_engine or (p.category or "") != "FuelTank":
+            continue                       # probe cores and cockpits carry fuel too — not tanks
         lf = p.resources.get("LiquidFuel", 0)
         ox = p.resources.get("Oxidizer", 0)
         if lf_only:
@@ -228,7 +229,8 @@ def _rocket(payload: float, dv: float, isp: float, dry_fixed: float, tank_ratio:
     return (payload + dry_fixed) / denom
 
 
-def _size_stage(st: StageDesign, payload: float, nuclear: bool, min_size: float, role: int = 0) -> None:
+def _size_stage(st: StageDesign, payload: float, nuclear: bool, min_size: float, role: int = 0,
+                single: bool = False) -> None:
     from . import school
     vacuum = not st.atmospheric
     best = None
@@ -237,7 +239,7 @@ def _size_stage(st: StageDesign, payload: float, nuclear: bool, min_size: float,
         isp = eng.isp_vac if vacuum else eng.isp_asl * 0.45 + eng.isp_vac * 0.55
         thrust_one = eng.max_thrust if vacuum else eng.thrust_at(1.0)
         nerv = "Oxidizer" not in eng.propellants
-        for n in CLUSTERS:
+        for n in ((1,) if single else CLUSTERS):
             size = e_size if n == 1 else next((s for s in SIZES if s > e_size * 1.4), 5.0)
             size = max(size, min_size)
             if n > 1 and size not in ENGINE_PLATE:
@@ -379,7 +381,7 @@ def design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = Tr
     min_size = d.top_size
     for idx in range(len(stages) - 1, -1, -1):
         st = stages[idx]
-        _size_stage(st, load, cfg.nuclear, min_size, idx)
+        _size_stage(st, load, cfg.nuclear, min_size, idx, cfg.buildable)
         if not st.feasible:
             st.note = L("not reachable — add a stage or boosters",
                         "недостижимо — добавьте ступень или ускорители")
