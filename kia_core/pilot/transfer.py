@@ -785,7 +785,7 @@ class TransferPlanner:
         self._status(f"Торможение у {self.target_name} для выхода на орбиту")
         orbit = self.vessel.orbit
         # Если периапсис слишком низкий — сначала поднимаем его
-        target = get_body(self.target_name)
+        target = None                         # the live game has every body; the table does not
         if orbit.periapsis_altitude < 8_000:
             log.info("Периапсис %.0f м слишком низкий — поднимаем", orbit.periapsis_altitude)
             self._raise_periapsis(15_000.0)

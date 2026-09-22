@@ -192,7 +192,9 @@ def build(world, target: ms.Target, vessel, report) -> FlightPlan:
                  f"Δv = {leg.dv:.0f} " + L("m/s", "м/с"),
                  wall=_burn_wall(leg.dv, accel), dv=leg.dv))
 
-    if getattr(target, "planet", False):
+    if getattr(target, "route", False):
+        _route_steps(world, target, add, report)
+    elif getattr(target, "planet", False):
         _planet_steps(world, target, add, legs, accel, report)
     elif target.body == m.name:
         tli = legs["tli"]
@@ -238,7 +240,100 @@ def build(world, target: ms.Target, vessel, report) -> FlightPlan:
                                   f"Постановка ретранслятора в точку ({slot + 1}/{total})"),
                  L(f"phase {360.0 * slot / total:.0f}° — neighbours see each other",
                    f"фаза {360.0 * slot / total:.0f}° — соседи видят друг друга"), wall=180.0))
+    if getattr(target, "return_home", False):
+        _return_steps(world, target, add, report)
     add(Step("done", L("Mission complete", "Миссия выполнена"), target.title, wall=2.0))
+    return plan
+
+
+def _gear(report):
+    vessel = report.vessel if report else None
+    heat = bool(vessel and any(pt.resources_max.get("Ablator", 0) > 0 for pt in vessel.parts))
+    chutes = bool(vessel and vessel.count("parachute") > 0)
+    return heat, chutes
+
+
+def _route_steps(world, target, add, report) -> None:
+    from . import routes as R, voyage
+    from .planets import current_ut
+    heat, chutes = _gear(report)
+    hops = R.route(world.home, target.body, land=target.landing, heatshield=heat, chutes=chutes,
+                   ut=current_ut(world))
+    voyage.steps_for(hops, add, Step)
+
+
+def _return_steps(world, target, add, report) -> None:
+    from . import routes as R, voyage
+    heat, chutes = _gear(report)
+    if target.body == world.home:
+        hops = [R.Hop("entry", world.home, world.home, 90.0)]
+    else:
+        hops = ms.return_hops(world, target, heat, chutes)
+    marker = Step("r_start", L("Return to " + world.home, "Возвращение на " + world.home),
+                  L("the way home", "дорога домой"), wall=2.0)
+    marker.run = lambda: True
+    add(marker)
+
+    def add_r(step):
+        step.key = "r" + step.key
+        step.title = L("Return: ", "Возврат: ") + step.title
+        add(step)
+    voyage.steps_for(hops, add_r, Step)
+
+
+def build_voyage(world, vessel_body: str, landed: bool, dest: str, report=None, *, land: bool = True,
+                 title: str = "") -> FlightPlan:
+    """A plan that starts wherever the craft is now (orbit or surface of any body)."""
+    from . import routes as R, voyage
+    from .planets import current_ut
+    heat, chutes = _gear(report)
+    t = ms.Target("VOYAGE", title or L(f"Flight to {dest}", f"Полёт к {dest}"), "VOY", dest, 0.0, landing=land)
+    plan = FlightPlan(t)
+    plan.steps.append(Step("where", L("Where are we", "Где мы"),
+                           L(f"{'surface' if landed else 'orbit'} of {vessel_body}",
+                             f"{'поверхность' if landed else 'орбита'} {vessel_body}"), wall=2.0, run=lambda: True))
+    if vessel_body == dest and not landed and land and dest == world.home:
+        hops = [R.Hop("entry", dest, dest, 90.0)]
+    else:
+        hops = R.route(vessel_body, dest, landed=landed, land=land, heatshield=heat, chutes=chutes,
+                       ut=current_ut(world))
+    voyage.steps_for(hops, plan.steps.append, Step)
+    plan.steps.append(Step("done", L("Arrived", "Прибыли"), t.title, wall=2.0, run=lambda: True))
+    return plan
+
+
+def build_rendezvous(world, vessel_body: str, landed: bool, target_vessel, dock: bool,
+                     report=None) -> FlightPlan:
+    """Get to the body the other craft orbits, then rendezvous (and dock)."""
+    from . import routes as R, voyage
+    from .planets import current_ut
+    heat, chutes = _gear(report)
+    name = target_vessel.name
+    tb = target_vessel.orbit.body.name
+    t = ms.Target("RDV", (L(f"Dock with {name}", f"Стыковка с {name}") if dock
+                          else L(f"Rendezvous with {name}", f"Сближение с {name}")), "RDV", tb, 0.0)
+    plan = FlightPlan(t)
+    if vessel_body != tb or landed:
+        hops = R.route(vessel_body, tb, landed=landed, heatshield=heat, chutes=chutes, ut=current_ut(world))
+        voyage.steps_for(hops, plan.steps.append, Step)
+    rows = [("rv_planes", L("Match orbital planes", "Совмещение плоскостей орбит"),
+             L("normal burn at the node", "импульс по нормали в узле"), 90.0),
+            ("rv_intercept", L("Intercept burn", "Импульс перехвата"),
+             L("searched over times and Δv with the game's orbit prediction",
+               "подобран по времени и Δv прогнозом орбиты игры"), 180.0),
+            ("rv_stop", L("Closest approach: match speed", "Точка сближения: уравнять скорость"),
+             L("relative speed below 0.5 m/s", "относительная скорость меньше 0.5 м/с"), 240.0),
+            ("rv_approach", L(f"Approach {name}", f"Подход к {name}"),
+             L("closing speed shrinks with distance", "скорость сближения падает с расстоянием"), 300.0)]
+    if dock:
+        rows.append(("rv_dock", L("Docking", "Стыковка"),
+                     L("RCS, port to port, ≤ 0.5 m/s", "RCS, узел к узлу, ≤ 0.5 м/с"), 420.0))
+    for key, title, detail, wall in rows:
+        st = Step(key, title, detail, wall=wall)
+        st.vessel_target = target_vessel
+        st.dock = dock
+        plan.steps.append(st)
+    plan.steps.append(Step("done", L("Done", "Готово"), t.title, wall=2.0, run=lambda: True))
     return plan
 
 
@@ -470,7 +565,12 @@ class Executor:
                 s.run = lambda: c["chute"].entry()
             elif k == "c_touchdown":
                 s.run = lambda: c["chute"].touchdown()
-            elif k == "done":
+            elif getattr(s, "hop", None) is not None:
+                from . import voyage
+                s.run = voyage.runner(self._voyage(), s)
+            elif k.startswith("rv_"):
+                s.run = self._rendezvous_step(s)
+            elif k in ("done", "where", "r_start"):
                 s.run = lambda: True
             if s.progress is None:
                 s.progress = lambda s=s: (time.time() - s.started) / max(s.wall, 1)
@@ -565,6 +665,36 @@ class Executor:
             self.plan.changes -= 3              # одна правка, а не четыре
         return True
 
+    def _voyage(self):
+        if "voyage" not in self.ctx:
+            from .voyage import Voyage
+            self.ctx["voyage"] = Voyage(self.ctx)
+        return self.ctx["voyage"]
+
+    def _rendezvous_step(self, s):
+        from kia_core.pilot.rendezvous import Docking, Rendezvous
+        c = self.ctx
+
+        def rv():
+            if "rv" not in c:
+                try:
+                    c["conn"].space_center.target_vessel = s.vessel_target
+                except Exception:
+                    pass
+                c["rv"] = Rendezvous(c["conn"], c["tel"], c["ctl"], c["man"], s.vessel_target)
+            return c["rv"]
+        if s.key == "rv_planes":
+            return lambda: rv().match_planes()
+        if s.key == "rv_intercept":
+            return lambda: rv().intercept()
+        if s.key == "rv_stop":
+            return lambda: rv().to_closest_approach()
+        if s.key == "rv_approach":
+            return lambda: rv().approach(Rendezvous.DOCK_START if s.dock else Rendezvous.APPROACH_DIST)
+        if s.key == "rv_dock":
+            return lambda: Docking(c["conn"], c["tel"], c["ctl"], s.vessel_target).run()
+        return lambda: True
+
     def _lander(self):
         if "lander" not in self.ctx:
             from kia_core.pilot.landing import LandingPilot
@@ -638,7 +768,8 @@ class Executor:
                 "descent_coast", "done"}      # continuous phases: a repeat makes no sense
 
     def _attempt(self, s: Step) -> bool:
-        tries = 1 if s.key in self.NO_RETRY else 1 + self.RETRIES
+        once = s.key in self.NO_RETRY or s.key.split("_")[-1] in ("ascend", "land", "entry", "dock")
+        tries = 1 if once else 1 + self.RETRIES
         ok = False
         for n in range(tries):
             if self.abort.is_set():
