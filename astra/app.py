@@ -20,7 +20,7 @@ from . import world as W
 from .i18n import L
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 def fmt(v: float) -> str:
@@ -87,7 +87,7 @@ class App:
 
     def available_targets(self) -> list[ms.Target]:
         unlocked = K.unlocked_targets()
-        ret = bool(self.settings.get("return_home", False))
+        ret = bool(self.settings.get("return_home", False)) and bool(K.capabilities().get("return"))
         out = [t for t in ms.targets(self.world) if t.code in unlocked]
         for t in out:
             t.return_home = ret
@@ -484,13 +484,17 @@ class App:
             for leg in b.legs:
                 body.append(f"    {T.STEEL}•{T.RESET} {T.pad(leg.title, 48)} {T.WHITE}"
                             f"{T.pad(fmt(leg.dv), 6, 'right')} {ms_}{T.RESET}")
-            ret = self.settings.get("return_home", False)
+            ret = self.settings.get("return_home", False) and bool(K.capabilities().get("return"))
             body.insert(1, f"  {T.OK if ret else T.MUTED}↩ {L('Return to Kerbin after the mission:', 'Возврат на Кербин после миссии:')} "
                            f"{T.BOLD}{L('ON', 'ВКЛ') if ret else L('off', 'выкл')}{T.RESET}  {T.MUTED}(R){T.RESET}")
             self.screen(section, body, L("↑↓ — select   Enter — set target   R — return home on/off   Esc — back",
                                          "↑↓ — выбор   Enter — назначить цель   R — возврат домой вкл/выкл   Esc — назад"))
             key = T.read_key(1.0)
             if key in ("r", "R", "к", "К"):
+                if not K.capabilities().get("return"):
+                    self.wait_key(section, [f"  {T.BAD}✗ {L('The installed weights have not learned the way home.', 'Установленные веса не умеют возвращаться домой.')}{T.RESET}",
+                                            "  " + L("Install ASTRAUTOMA weights 1.1 or newer.", "Установите веса ASTRAUTOMA 1.1 или новее.")])
+                    continue
                 self.settings["return_home"] = not ret
                 self.save_settings()
                 items = self.available_targets()
@@ -718,8 +722,19 @@ class App:
                      f"({L('with margin', 'с запасом')} {fmt(need * ms.MARGIN)}), {L('the craft has', 'у аппарата')} {fmt(have)}{T.RESET}"]
         return body
 
+    def _need(self, section: str, skill: str) -> bool:
+        """True (and a message) when the installed weights lack a skill."""
+        if K.capabilities().get(skill):
+            return False
+        self.wait_key(section, [f"  {T.BAD}✗ {L('The installed weights do not know how to do this yet.', 'Установленные веса пока этого не умеют.')}{T.RESET}", "",
+                                "  " + L("Install ASTRAUTOMA weights 1.1 or newer (Weights / Knowledge → I).",
+                                         "Установите веса ASTRAUTOMA 1.1 или новее («Веса / Знания» → I).")])
+        return True
+
     def do_home(self) -> None:
         section = L("RETURN HOME", "ВОЗВРАЩЕНИЕ ДОМОЙ")
+        if self._need(section, "return"):
+            return
         got = self._live_craft(section)
         if got is None:
             return
@@ -740,6 +755,8 @@ class App:
 
     def do_rendezvous(self) -> None:
         section = L("RENDEZVOUS / DOCKING", "СБЛИЖЕНИЕ / СТЫКОВКА")
+        if self._need(section, "rendezvous"):
+            return
         got = self._live_craft(section)
         if got is None:
             return
@@ -787,7 +804,7 @@ class App:
                 sel = (sel - 1) % len(rows)
             elif key == T.DOWN:
                 sel = (sel + 1) % len(rows)
-            elif key in ("d", "D", "в", "В"):
+            elif key in ("d", "D", "в", "В") and K.capabilities().get("docking"):
                 dock = not dock
             elif key == T.ENTER:
                 target_v = rows[sel][1]

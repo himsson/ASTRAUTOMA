@@ -144,6 +144,10 @@ def best_assist(a: str, b: str, ut: float, heat: bool = False) -> Assist | None:
     key = (a, b, round(ut / DAY), heat)
     if key in _CACHE:
         return _CACHE[key]
+    found = _from_atlas(a, b, ut, heat)
+    if found is not False:
+        _CACHE[key] = found
+        return found
     base = direct(a, b, ut, heat)
     best = None
     for f in CANDIDATES:
@@ -161,3 +165,35 @@ def best_assist(a: str, b: str, ut: float, heat: bool = False) -> Assist | None:
         best.extra["saves"] = base.total - best.total
     _CACHE[key] = best
     return best
+
+
+def _from_atlas(a: str, b: str, ut: float, heat: bool):
+    """Best tabulated assist departing in the next window, None if the atlas
+    says fly direct, False if the atlas does not cover this date."""
+    try:
+        from .knowledge import assist_atlas
+        atlas = assist_atlas()
+    except Exception:
+        return False
+    rows = atlas.get("pairs", {}).get(f"{a}>{b}")
+    if rows is None:
+        return False
+    s = _sys()
+    A, B = s[a], s[b]
+    syn = abs(1 / (1 / A.period - 1 / B.period))
+    last = float(atlas.get("years", 0.0)) * 426 * DAY
+    if ut > last:
+        return False                               # beyond the atlas: search live
+    near = [r for r in rows if ut <= r["t_dep"] <= ut + syn * 1.2]
+    if not near:
+        return None
+    r = min(near, key=lambda r: r["total"])
+    arrival = r["arrival"]
+    total = r["total"]
+    if heat and B.atmosphere > 0:                  # the atlas assumes a propulsive capture
+        total, arrival = total - arrival + 80.0, 80.0
+    x = Assist(list(r["flyby"]), total, r["departure"], r["flyby_dv"], arrival,
+               r["t_arr"] - r["t_dep"], r["t_dep"], r["t_flyby"], r["t_arr"], r["rp"], r["v_inf_arr"])
+    if r.get("direct"):
+        x.extra["saves"] = r["direct"] - r["total"]
+    return x
