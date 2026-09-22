@@ -98,6 +98,8 @@ class ModuleVersion:
             bits.append(L(f"score {m['score']:.0f}", f"счёт {m['score']:.0f}"))
         if m.get("accuracy"):
             bits.append(L("accuracy ", "точность ") + m["accuracy"])
+        if m.get("skills"):
+            bits.append(L("skills: ", "умения: ") + m["skills"])
         return "  ·  ".join(bits)
 
 
