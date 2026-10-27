@@ -35,6 +35,30 @@ PENDING, RUNNING, DONE, FAILED, SKIPPED = "pending", "running", "done", "failed"
 
 # ==========================================================================
 @dataclass
+class Branch:
+    """Заготовленный ответ на отказ шага.
+
+    Считается ДО старта, пока время есть. В полёте его не считают, его
+    берут: на выведении между отказом двигателя и потерей аппарата
+    проходят секунды, и там уместен только просмотр готового ответа.
+
+    crew   — переживает ли экипаж этот исход
+    craft  — сколько аппарата удаётся сохранить: "весь" / "капсула" /
+             "ничего". Деньги важны, но считаются после людей.
+    ready  — хватает ли аппарату топлива и оснащения на этот ответ
+    """
+    trigger: str
+    action: str
+    crew: bool = True
+    craft: str = ""
+    ready: bool = True
+
+    def line(self) -> str:
+        mark = "" if self.ready else L(" (not available)", " (нечем)")
+        return f"{self.trigger} -> {self.action}{mark}"
+
+
+@dataclass
 class Step:
     key: str
     title: str
@@ -50,6 +74,11 @@ class Step:
     baseline_end: float = 0.0          # время завершения по исходному плану
     run: Callable | None = None
     progress: Callable | None = None
+    branches: list = field(default_factory=list)    # заготовки на отказ
+    # Сколько секунд можно думать, если шаг не удался. На выведении
+    # столько, сколько есть до потери аппарата; на орбите — сколько
+    # угодно. Ноль означает «решать немедленно, по заготовке».
+    decide_window: float = 60.0
 
 
 @dataclass
@@ -243,7 +272,95 @@ def build(world, target: ms.Target, vessel, report) -> FlightPlan:
     if getattr(target, "return_home", False):
         _return_steps(world, target, add, report)
     add(Step("done", L("Mission complete", "Миссия выполнена"), target.title, wall=2.0))
+    attach_branches(plan, report)
     return plan
+
+
+# Сколько секунд есть на размышление, если шаг не удался. Это не вкус, а
+# физика: в плотных слоях аппарат с мёртвым двигателем теряется за
+# десяток секунд, и ждать там минуту — значит гарантированно потерять
+# его. На орбите спешить, наоборот, незачем. Ноль означает «действовать
+# по заготовке немедленно, человека не ждать».
+DECIDE_WINDOW = {
+    "check": 0.0, "liftoff": 0.0, "turn": 0.0, "braking": 0.0,
+    "touchdown": 0.0, "c_touchdown": 0.0, "entry": 0.0, "c_entry": 0.0,
+    "coast": 10.0, "descent_coast": 10.0,
+    "circ": 30.0, "loi": 30.0, "deorbit": 30.0,
+}
+DEFAULT_WINDOW = 60.0
+
+
+def attach_branches(plan, report) -> None:
+    """Заготавливает ответы на отказы — до старта, пока есть время.
+
+    Перебирать варианты в момент аварии поздно: на выведении между
+    отказом двигателя и потерей аппарата проходят секунды. Поэтому для
+    каждого опасного шага ответ считается заранее и лежит в плане, где
+    его видит и оператор.
+
+    Порядок ценностей один и тот же везде: сначала экипаж, потом
+    железо. Ветка, которая спасает ступени ценой людей, в план не
+    попадает.
+    """
+    heat, chutes = _gear(report)
+    vessel = report.vessel if report else None
+    crewed = bool(vessel and vessel.crewed)
+    # Возврат с орбиты без парашютов возможен только на тяге, а на неё
+    # нужен запас. Без того и другого ветка «домой» нечестна.
+    spare = float(getattr(report, "spare_dv", 0.0) or 0.0)
+
+    def B(trigger, action, crew=True, craft="", ready=True):
+        return Branch(trigger, action, crew=crew, craft=craft, ready=ready)
+
+    down = L("retrograde, parachutes", "ретроград, парашюты")
+    for step in plan.steps:
+        step.decide_window = DECIDE_WINDOW.get(step.key, DEFAULT_WINDOW)
+        key = step.key
+        if key == "check":
+            step.branches = [B(L("a system fails the check", "система не прошла проверку"),
+                               L("cancel the launch, throttle to zero", "отмена пуска, дроссель в ноль"),
+                               craft=L("all", "весь"))]
+        elif key == "liftoff":
+            step.branches = [B(L("engine out before the tower is cleared", "отказ двигателя до схода с башни"),
+                               L("shut down, the craft stays on the pad", "выключение, аппарат остаётся на столе"),
+                               craft=L("all", "весь"))]
+        elif key == "turn":
+            step.branches = [
+                B(L("engine out, fuel left", "отказ двигателя, топливо есть"),
+                  L("level off, raise periapsis on what is left",
+                    "выровнять, добрать перицентр остатком")),
+                B(L("no thrust at all", "тяги нет совсем"), down,
+                  crew=chutes or heat, craft=L("capsule", "капсула"),
+                  ready=chutes or heat),
+            ]
+        elif key in ("circ", "circ_high"):
+            step.branches = [B(L("the burn does not complete", "импульс не прошёл"),
+                               L("ballistic re-entry, parachutes", "баллистический вход, парашюты"),
+                               crew=chutes or heat, craft=L("capsule", "капсула"),
+                               ready=chutes or heat)]
+        elif key in ("tli", "raise"):
+            step.branches = [B(L("the burn is short", "импульс неполон"),
+                               L("back to the parking orbit, try the next window",
+                                 "вернуться на опорную орбиту, ждать следующего окна"),
+                               craft=L("all", "весь"), ready=spare > 0)]
+        elif key == "loi":
+            step.branches = [B(L("capture fails", "торможение не прошло"),
+                               L("fly by and come home on the free return",
+                                 "пролёт мимо и возвращение свободной траекторией"),
+                               craft=L("all", "весь"), ready=spare > 0)]
+        elif key in ("deorbit", "descent_coast", "braking", "touchdown"):
+            step.branches = [B(L("engine out on descent", "отказ двигателя на спуске"),
+                               down if (chutes or heat) else
+                               L("hard landing", "жёсткая посадка"),
+                               crew=chutes or heat,
+                               craft=L("capsule", "капсула") if (chutes or heat) else L("nothing", "ничего"),
+                               ready=chutes or heat)]
+    # Если экипажа нет, ветки про капсулу говорить незачем: там считают
+    # деньги, а не людей.
+    if not crewed:
+        for step in plan.steps:
+            for b in step.branches:
+                b.crew = True
 
 
 def _gear(report):
@@ -798,8 +915,26 @@ class Executor:
         s.status = DONE if ok else FAILED
         return ok
 
-    def _ask_recovery(self, s: Step, wait: float = 60.0) -> str:
+    def _ask_recovery(self, s: Step, wait: float | None = None) -> str:
+        """Что делать после отказа шага: спросить или действовать самому.
+
+        Окно берётся из шага, а не одно на весь полёт. В плотных слоях
+        и на посадке его нет совсем: пока оператор читает вопрос,
+        аппарата уже не будет. Там исполняется заготовка, посчитанная
+        до старта (`Step.branches`), а человек узнаёт об этом из плана.
+
+        И пока вопрос висит, аппарат не брошен: дроссель в ноль, варп
+        снят, SAS держит ориентацию. Раньше он всё это время летел с той
+        тягой и тем углом, на которых его застал отказ.
+        """
         if self.abort.is_set():
+            return "rescue"
+        self._hold()
+        if wait is None:
+            wait = float(getattr(s, "decide_window", 60.0))
+        if wait <= 0.0:
+            logging.getLogger("kia").warning(
+                "%s: отказ в критической фазе, решение по заготовке", s.key)
             return "rescue"
         self.plan.question = L(f"Step “{s.title}” failed" + (f" ({self.error})" if self.error else "") + ".",
                                f"Шаг «{s.title}» не удался" + (f" ({self.error})" if self.error else "") + ".")
@@ -810,6 +945,22 @@ class Executor:
         choice = self.plan.decision or "rescue"
         self.plan.question = ""
         return choice
+
+    def _hold(self) -> None:
+        """Безопасное ожидание: тяги нет, варпа нет, ориентацию держит SAS."""
+        try:
+            self.ctx["ctl"].stop_warp()
+            self.ctx["ctl"].set_throttle(0.0)
+            self.ctx["ctl"].set_sas(True, "stability_assist")
+        except Exception:
+            pass
+
+    def _crew_aboard(self) -> int:
+        """Сколько человек на борту. Ошибка связи — считаем, что есть."""
+        try:
+            return int(self.ctx["tel"].vessel.crew_count)
+        except Exception:
+            return 0
 
     def decide(self, choice: str) -> None:
         self.plan.decision = choice
@@ -826,8 +977,16 @@ class Executor:
             pass
 
     def _rescue(self, failed: Step) -> None:
-        """Bring the craft into a safe state: a stable orbit, or a soft landing."""
+        """Увести аппарат в безопасное состояние: орбита или мягкая посадка.
+
+        Порядок ценностей: сначала люди, потом железо. С экипажем на
+        борту годится только тот исход, который человек переживает, —
+        орбита, с которой можно вернуться, или посадка. Беспилотник в
+        той же ситуации можно разменять: если спасти его нечем, он
+        падает, и это потеря денег, а не жизни.
+        """
         c = self.ctx
+        crew = self._crew_aboard()
         step = Step("rescue", L("Rescue the craft", "Спасение аппарата"), wall=120.0, mark=L("added", "добавлено"))
         self.plan.steps.append(step)
         self.plan.changes += 1
@@ -869,6 +1028,9 @@ class Executor:
         base = self.error or L(f"step “{failed.title}” failed", f"шаг «{failed.title}» не выполнен")
         self.plan.verdict = base + " — " + (L("craft saved: ", "аппарат спасён: ") if ok
                                             else L("rescue failed: ", "спасти не удалось: ")) + how
+        if crew:
+            self.plan.verdict += (L(f" | crew of {crew}: safe", f" | экипаж {crew} чел.: цел") if ok
+                                  else L(f" | CREW OF {crew} LOST", f" | ЭКИПАЖ {crew} ЧЕЛ. ПОТЕРЯН"))
 
     def stop(self) -> None:
         self.abort.set()

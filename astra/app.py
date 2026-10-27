@@ -720,7 +720,33 @@ class App:
         col = T.OK if ok else (T.WARN if have >= need else T.BAD)
         body += ["", f"  {col}{T.BOLD}Δv: {L('need', 'нужно')} {fmt(need)} {ms_} "
                      f"({L('with margin', 'с запасом')} {fmt(need * ms.MARGIN)}), {L('the craft has', 'у аппарата')} {fmt(have)}{T.RESET}"]
-        return body
+        return body + self._branch_lines(plan)
+
+    def _branch_lines(self, plan) -> list[str]:
+        """Что будет сделано, если шаг не удастся.
+
+        Показывается до старта, потому что именно здесь на это есть
+        время. В полёте их уже не выбирают — их исполняют: окно решения
+        на выведении и посадке равно нулю.
+        """
+        risky = [s for s in plan.steps if s.branches]
+        if not risky:
+            return []
+        out = ["", f"  {T.SILVER}{L('If it goes wrong', 'Если пойдёт не так')}{T.RESET}"]
+        for s in risky:
+            window = (L("at once", "сразу") if s.decide_window <= 0
+                      else f"{s.decide_window:.0f} {L('s', 'с')}")
+            out.append(f"    {T.STEEL}{T.pad(s.title, 44)}{T.RESET} "
+                       f"{T.MUTED}{L('decision', 'решение')}: {window}{T.RESET}")
+            for b in s.branches:
+                if not b.crew:
+                    col = T.BAD
+                elif not b.ready:
+                    col = T.WARN
+                else:
+                    col = T.OK
+                out.append(f"      {col}{b.line()}{T.RESET}")
+        return out
 
     def _need(self, section: str, skill: str) -> bool:
         """True (and a message) when the installed weights lack a skill."""

@@ -73,6 +73,7 @@ class DesignConfig:
     relay: bool = False      # design a comms relay satellite for the target
     kind: str = "rocket"     # what rides on top: rocket / rover / base / station / probe
     buildable: bool = True   # one engine per stage — what the VAB builder can place
+    ignore_school_twr: bool = False   # retry without the school's TWR quartiles
 
     def stage_count(self, target: ms.Target, total_dv: float = 0.0) -> int:
         """Auto: what people build for this Δv (design school), else ~3 km/s a stage."""
@@ -152,6 +153,21 @@ class Design:
     def feasible(self) -> bool:
         return bool(self.stages) and all(s.feasible for s in self.stages)
 
+    @property
+    def payload_release(self) -> str:
+        """После какого шага плана груз отделяют от ракеты.
+
+        У голой ракеты груз — она сама, отделять нечего. Всё остальное
+        едет сверху и в какой-то момент должно уехать: зонд и станция
+        остаются на орбите, ровер и база — на грунте. Момент задаёт не
+        тип груза, а то, кончается ли полёт посадкой.
+
+        Пустая строка означает «отделять нечего».
+        """
+        if getattr(self.config, "kind", "rocket") == "rocket":
+            return ""
+        return "touchdown" if self.target.landing else "orbit_check"
+
 
 # ==========================================================================
 # Parts
@@ -186,8 +202,15 @@ def _engines(vacuum: bool, nuclear: bool):
 def _tanks(size: float, lf_only: bool = False):
     out = []
     for p in catalog().parts.values():
-        if p.is_engine or (p.category or "") != "FuelTank":
-            continue                       # probe cores and cockpits carry fuel too — not tanks
+        # Категория в KSP — это вкладка в редакторе, а не свойство детали:
+        # баки Kerbodyne S3 (единственные стоковые на 3.75 м) лежат в
+        # "Propulsion". Пока отбор шёл по "FuelTank", весь класс 3.75 м был
+        # невидим — двигатели есть, баков нет, — и ни одна тяжёлая ракета
+        # не собиралась. Пропускаем обе вкладки, а отсеиваем по сути:
+        # баки с топливом и одним стековым профилем. Кабины и зонды с
+        # топливом сюда не попадают — у них свои категории.
+        if p.is_engine or (p.category or "") not in ("FuelTank", "Propulsion"):
+            continue
         lf = p.resources.get("LiquidFuel", 0)
         ox = p.resources.get("Oxidizer", 0)
         if lf_only:
@@ -345,9 +368,58 @@ def _stage_plan(budget: ms.Budget, n: int, factor: float,
 
 
 def design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = True) -> Design:
-    """Designs the craft. With boosters on auto, every option (none, 2, 4, 6, 8)
-    is designed and the lightest feasible rocket wins — boosters only when they
-    really lift the rocket cheaper (or when it cannot leave the pad without them)."""
+    """Designs the craft, and does not take the first refusal for an answer.
+
+    The stage count and the Δv split come from the design school, and the
+    school can ask for a plan no engine in the game can fill: the share is
+    too small for the smallest engine, or the TWR quartile is out of reach
+    at that mass. The stage comes back infeasible and the whole design is
+    refused — the operator sees "not feasible, change the settings" and is
+    left to guess which setting.
+
+    Measured on the stock system, 38 targets x 5 kinds of craft: 36 % of
+    the projects were refused this way, every one of them with a stage the
+    solver could not give an engine. So a refusal is not an answer, it is a
+    reason to try the neighbouring plans — other stage counts first, then
+    the same counts without the school's TWR targets. The lightest design
+    that actually works wins.
+    """
+    first = _with_boosters(world, target, cfg, margin)
+    if first.feasible or cfg.stages:
+        return first
+
+    import copy
+    asked = cfg.stage_count(target, first.budget.total_margin)
+    best = None
+    # Отступаем по одному ограничению за раз, от самого безобидного.
+    # Число ступеней — просто другой план; квартили TWR из школы — вкус,
+    # а не физика; ядерный двигатель меняет сам аппарат, поэтому он
+    # последний. Он же единственный ответ на ступень в 6-7 км/с: при
+    # Isp 340 с она требует отношения масс около 9 — предел стоковых
+    # баков, при Isp 800 с хватает 2.5.
+    for relax_twr, nuclear in ((False, False), (True, False), (True, True)):
+        if nuclear and cfg.nuclear:
+            break                       # ядерный уже был разрешён с самого начала
+        for n in (2, 3, 4, 5):
+            if n == asked and not relax_twr:
+                continue
+            c = copy.copy(cfg)
+            c.stages = n
+            c.ignore_school_twr = relax_twr
+            c.nuclear = cfg.nuclear or nuclear
+            d = _with_boosters(world, target, c, margin)
+            if d.feasible and (best is None or d.total_mass < best.total_mass):
+                best = d
+        if best is not None:
+            break
+    return best if best is not None else first
+
+
+def _with_boosters(world: World, target: ms.Target, cfg: DesignConfig,
+                   margin: bool = True) -> Design:
+    """With boosters on auto, every option (none, 2, 4, 6, 8) is designed and
+    the lightest feasible rocket wins — boosters only when they really lift the
+    rocket cheaper (or when it cannot leave the pad without them)."""
     if cfg.boosters >= 0:
         return _design(world, target, cfg, margin)
     import copy
@@ -381,7 +453,11 @@ def _design(world: World, target: ms.Target, cfg: DesignConfig, margin: bool = T
     _equipment(d, world)
     from . import school
     n = cfg.stage_count(target, budget.total_margin)
-    liftoff, second_twr, upper_twr = school.twr_targets(budget.total_margin, liftoff, upper_twr)
+    if cfg.ignore_school_twr:
+        second_twr = upper_twr
+    else:
+        liftoff, second_twr, upper_twr = school.twr_targets(
+            budget.total_margin, liftoff, upper_twr)
     lower = n - 1 if (any(l.key in ("loi", "land") or l.key.startswith("r") for l in budget.legs) and n >= 3) else n
     plan = _stage_plan(budget, n, factor, split, school.split_for(lower, budget.total_margin))
     labels = ["I", "II", "III", "IV", "V"]
