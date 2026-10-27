@@ -84,6 +84,30 @@ designer, mathematician, navigator, knowledge) between versions. Weight files ar
 - **Rocket design** from real KSP parts, with lists of required and optional equipment.
 - **English and Russian** interface.
 
+## 📊 Benchmarks
+
+One exam, the same for every version of the weights. Nothing here is
+estimated: the numbers come out of `tools/bench_designer.py` and the training
+repository's `tools/benchmark.py`, and the game does not have to be running.
+
+| Version | Piloting | Design | Math | Planning |
+|---|---|---|---|---|
+| **1.x** | 100.0 % | 63.7 % | 96.7 % | 97.8 % |
+| **2.0** | — | — | — | — |
+
+**Piloting** — 40 ascents in the hardest simulator, from the pad, at full
+difficulty: how many reach a stable orbit. **Design** — 190 projects (38
+targets × 5 kinds of craft): how many the designer carries all the way to a
+`.craft` the game's loader accepts. **Math** — 600 problems on each of the
+four levels, inside the tolerance of the level. **Planning** — 9 216 missions:
+how often the navigator picks the right plan (route, window, gravity assist).
+
+Releases 1.1, 1.2 and 1.3 carry the same networks byte for byte — they were
+packed from one training run, and what grew between them was the design
+school (0 → 66 → 497 craft). So they share one row. The weakest number is
+the designer: it refuses 36 % of the projects, always for the same reason —
+a stage it cannot fill with an engine.
+
 ## ❓ Questions
 
 **Is it a mod?** No. It is a separate program that talks to the game through kRPC. Only kRPC goes into `GameData`.
