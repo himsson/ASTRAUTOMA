@@ -88,6 +88,17 @@ MAX_Q_DANGER_THROTTLE = 0.15
 # профилем. Дальше ждать нечего — только жечь время итерации.
 APOAPSIS_DECAY_HOLD = 12.0
 
+# Отказ двигателя: тяга ниже этой доли от доступной при открытом дросселе.
+# Доступная тяга (available_thrust) уже учитывает давление и выработанные
+# ступени, поэтому сравнивать можно прямо с ней.
+THRUST_DEAD_FRACTION = 0.15
+# Сколько секунд держать это состояние, прежде чем назвать его отказом.
+# Полторы секунды переживает раскрутка двигателя (0.5-1 с) и не переживает
+# заглохшая камера.
+THRUST_DEAD_HOLD = 1.5
+# Ниже этого дросселя проверять нечего: тяги и не должно быть.
+THRUST_CHECK_THROTTLE = 0.3
+
 
 class AscentAutopilot:
     """Пилот участка «стартовый стол -> круговая орбита»."""
@@ -109,6 +120,7 @@ class AscentAutopilot:
         self._tumble_since: float | None = None
         self._best_apoapsis: float = 0.0
         self._apoapsis_falling_since: float | None = None
+        self._thrust_dead_since: float | None = None
         self._q_warned = False
 
     # ------------------------------------------------------------------
@@ -448,6 +460,8 @@ class AscentAutopilot:
 
             if self._tumbling(snap):
                 return False
+            if self._engine_dead(snap):
+                return False
             if self._ascent_hopeless(snap):
                 return False
 
@@ -590,6 +604,44 @@ class AscentAutopilot:
                   snap.angle_of_attack,
                   float(getattr(snap, "sideslip_angle", 0.0) or 0.0),
                   snap.altitude)
+        return True
+
+    def _engine_dead(self, snap) -> bool:
+        """Двигатель не даёт тяги при открытом дросселе.
+
+        Проверка прямая и потому быстрая. Косвенная (`_ascent_hopeless`)
+        тоже поймает этот случай, но позже: она ждёт, пока апоапсис
+        упадёт на три процента и продержится так двенадцать секунд. В
+        плотных слоях эти секунды и есть разница между «увели аппарат»
+        и «собрали обломки».
+
+        Ступени здесь ни при чём: available_thrust считается по тому,
+        что реально подключено и заправлено, поэтому пустая ступень даёт
+        ноль в обеих частях сравнения и отказом не выглядит.
+        """
+        if self.control.throttle < THRUST_CHECK_THROTTLE:
+            self._thrust_dead_since = None
+            return False
+        available = float(getattr(snap, "available_thrust", 0.0) or 0.0)
+        if available <= 0.0:
+            self._thrust_dead_since = None
+            return False
+        if float(snap.thrust or 0.0) > available * THRUST_DEAD_FRACTION:
+            self._thrust_dead_since = None
+            return False
+        if self._thrust_dead_since is None:
+            self._thrust_dead_since = snap.mission_time
+            return False
+        if snap.mission_time - self._thrust_dead_since < THRUST_DEAD_HOLD:
+            return False
+
+        self._fact("Отказ двигателя",
+                   f"дроссель {self.control.throttle:.0%}, тяга "
+                   f"{float(snap.thrust or 0.0):.0f} из {available:.0f} кН "
+                   f"доступных — выведение прекращено")
+        log.error("Отказ двигателя на %.0f м: тяга %.0f из %.0f кН",
+                  snap.altitude, float(snap.thrust or 0.0), available)
+        self.control.set_throttle(0.0)
         return True
 
     def _ascent_hopeless(self, snap) -> bool:
