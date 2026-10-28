@@ -720,7 +720,19 @@ class App:
         col = T.OK if ok else (T.WARN if have >= need else T.BAD)
         body += ["", f"  {col}{T.BOLD}Δv: {L('need', 'нужно')} {fmt(need)} {ms_} "
                      f"({L('with margin', 'с запасом')} {fmt(need * ms.MARGIN)}), {L('the craft has', 'у аппарата')} {fmt(have)}{T.RESET}"]
-        return body + self._branch_lines(plan)
+        return body + self._payload_lines() + self._branch_lines(plan)
+
+    def _payload_lines(self) -> list[str]:
+        """Что отделяется и что остаётся — прочитано из самого аппарата."""
+        if self.vessel is None:
+            return []
+        from . import payload
+        rows = payload.describe(self.vessel)
+        if not rows:
+            return []
+        out = ["", f"  {T.SILVER}{L('What separates', 'Что отделяется')}{T.RESET}"]
+        out += [f"    {T.MUTED}{row}{T.RESET}" for row in rows]
+        return out
 
     def _branch_lines(self, plan) -> list[str]:
         """Что будет сделано, если шаг не удастся.
