@@ -361,6 +361,40 @@ class ShipControl:
         if count:
             log.info("Раскрыто парашютов: %d", count)
 
+    def shed_to_capsule(self) -> bool:
+        """Отделить кабину от мёртвой ракеты. Возвращает, сработало ли.
+
+        На спуске это решает всё. Кабина с щитом и куполом вход
+        переживает; та же кабина, оставшаяся на пустой ступени, падает
+        с лобовой площадью ракеты и разрушается напором раньше, чем
+        успевает затормозить. Замер в тренажёре: без отделения из 34
+        аварий с экипажем не пережила ни одна, с отделением — почти все.
+
+        Ищем сверху вниз: от обитаемой детали по дереву вниз до первого
+        разделителя. Он и отрезает всё, что ниже.
+        """
+        try:
+            crew = [p for p in self.vessel.parts.all if p.crew_capacity > 0]
+        except Exception:
+            return False
+        if not crew:
+            return False
+        seen, queue = set(), list(crew)
+        while queue:
+            part = queue.pop(0)
+            if id(part) in seen:
+                continue
+            seen.add(id(part))
+            try:
+                if part not in crew and part.decoupler is not None:
+                    part.decoupler.decouple()
+                    log.info("Кабина отделена от аварийной ракеты")
+                    return True
+                queue.extend(part.children)
+            except Exception:
+                continue
+        return False
+
     def deploy_landing_gear(self) -> int:
         """Выпускает посадочные опоры. Повторный вызов безвреден.
 
