@@ -312,7 +312,10 @@ def attach_branches(plan, report) -> None:
     def B(trigger, action, crew=True, craft="", ready=True):
         return Branch(trigger, action, crew=crew, craft=craft, ready=ready)
 
-    down = L("retrograde, parachutes", "ретроград, парашюты")
+    # С экипажем спуск начинается с увода кабины: аппарат целиком входа
+    # не переживает, кабина со щитом — переживает.
+    down = (L("capsule away, retrograde, parachutes", "увод кабины, ретроград, парашюты")
+            if crewed else L("retrograde, parachutes", "ретроград, парашюты"))
     for step in plan.steps:
         step.decide_window = DECIDE_WINDOW.get(step.key, DEFAULT_WINDOW)
         key = step.key
@@ -1011,6 +1014,13 @@ class Executor:
             elif atmo:
                 how = L("parachutes, retrograde", "парашюты, ретроград")
                 c["ctl"].set_throttle(0.0)
+                # Сначала сбросить мёртвую ракету, и только потом
+                # спускаться: кабина входит в атмосферу сама. Пока
+                # этого шага не было, спуск шёл всем аппаратом целиком,
+                # а он входа не переживает (см. ctl.shed_to_capsule).
+                if crew and c["ctl"].shed_to_capsule():
+                    how = L("capsule away, parachutes",
+                            "увод кабины, парашюты")
                 c["ctl"].set_sas(True, "retrograde")
                 while v.flight(body.reference_frame).mean_altitude > 5_000 and not self.abort.is_set():
                     time.sleep(1.0)
